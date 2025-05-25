@@ -1,10 +1,11 @@
 use clap::{Arg, Command};
-use ec_secrets_manager_cli::auth::AuthenticatedUser;
-use ec_secrets_shared_library::models::UserCredentials;
+use ec_secrets_manager_cli::models::{auth::Auth, session::Session};
+use ec_secrets_shared_library::models::{Secret, UserCredentials};
 
 #[tokio::main]
 async fn main() {
-    let mut authenticated_user = AuthenticatedUser::new().await;
+    let mut authed_user = Auth::new();
+    let mut session = Session::new();
     let matches = Command::new("ec_lock_smith")
         .version("1.0")
         .about("Embra Connect Lock Smith CLI")
@@ -71,6 +72,51 @@ async fn main() {
                         ),
                 ),
         )
+        .subcommand(
+            Command::new("secret")
+                .about("allow users to execute secret management capablities of lock smith")
+                .arg_required_else_help(true)
+                .subcommand(
+                    Command::new("create")
+                        .about("create a new secret in lock smith")
+                        .arg(
+                            Arg::new("key")
+                                .short('k')
+                                .long("key")
+                                .required(true)
+                                .help("Secret Key"),
+                        )
+                        .arg(
+                            Arg::new("value")
+                                .short('v')
+                                .long("value")
+                                .required(true)
+                                .help("Seret Value"),
+                        ),
+                )
+                .subcommand(
+                    Command::new("list")
+                        .about("list all secrets for your accounts in lock smith")
+                        .arg(
+                            Arg::new("id")
+                                .short('i')
+                                .long("id")
+                                .required(false)
+                                .help("Secret Id"),
+                        ),
+                )
+                .subcommand(
+                    Command::new("delete")
+                        .about("delete secret in lock smith")
+                        .arg(
+                            Arg::new("id")
+                                .short('i')
+                                .long("id")
+                                .required(true)
+                                .help("Secrets Id"),
+                        ),
+                ),
+        )
         .get_matches();
 
     match matches.subcommand() {
@@ -82,7 +128,7 @@ async fn main() {
                     .unwrap()
                     .to_string(),
             };
-            authenticated_user.login(creds).await.map_or_else(
+            authed_user.login(creds).await.map_or_else(
                 |error| println!("\x1b[0;31m Login failed: {error} \x1b[0m"),
                 |_| println!("\x1b[0;32m Login successful \x1b[0m"),
             );
@@ -90,14 +136,14 @@ async fn main() {
         Some(("users", submatches)) => match submatches.subcommand() {
             Some(("list", submatches)) => {
                 let id: Option<&str> = submatches.get_one::<String>("id").map(|id| id.as_str());
-                authenticated_user.get_users(id).await.map_or_else(
+                session.get_users(id).await.map_or_else(
                     |error| println!("\x1b[0;31m Error fetching users: {error} \x1b[0m"),
                     |_| println!("\x1b[0;32m Fetch successful \x1b[0m"),
                 );
             }
             Some(("delete", submatches)) => {
                 let id: Option<&str> = submatches.get_one::<String>("id").map(|id| id.as_str());
-                authenticated_user.delete_user(id).await.map_or_else(
+                session.delete_user(id).await.map_or_else(
                     |error| println!("\x1b[0;31m Error deleting user: {error} \x1b[0m"),
                     |_| println!("\x1b[0;32m Deleted user successfully '\x1b[0m"),
                 );
@@ -111,9 +157,39 @@ async fn main() {
                         .to_string(),
                 };
 
-                authenticated_user.create_user(creds).await.map_or_else(
+                session.create_user(creds).await.map_or_else(
                     |error| println!("\x1b[0;31m Error creating user: {error} \x1b[0m"),
                     |_| println!("\x1b[0;32m User created successfully \x1b[0m"),
+                );
+            }
+            _ => {}
+        },
+
+        Some(("secret", submatches)) => match submatches.subcommand() {
+            Some(("create", submatches)) => {
+                let secret = Secret {
+                    key: submatches.get_one::<String>("key").unwrap().to_string(),
+                    value: submatches.get_one::<String>("value").unwrap().to_string(),
+                };
+                session.create_secret(secret).await.map_or_else(
+                    |error| println!("\x1b[0;31m Error creating secret: {error} \x1b[0m"),
+                    |_| println!("\x1b[0;32m Secreted created successfully \x1b[0m"),
+                );
+            }
+
+            Some(("list", submatches)) => {
+                let id: Option<&str> = submatches.get_one::<String>("id").map(|id| id.as_str());
+                session.list_secrets(id).await.map_or_else(
+                    |error| println!("\x1b[0;31m Error fetching secrets: {error} \x1b[0m"),
+                    |_| println!("\x1b[0;32m Fetched secrets successfully \x1b[0m"),
+                );
+            }
+
+            Some(("delete", submatches)) => {
+                let id: &str = submatches.get_one::<String>("id").unwrap().as_str();
+                session.delete_secret(id).await.map_or_else(
+                    |error| println!("\x1b[0;31m Error deleting secret: {error} \x1b[0m"),
+                    |_| println!("\x1b[0;32m Deleted secret successfully \x1b[0m"),
                 );
             }
             _ => {}
