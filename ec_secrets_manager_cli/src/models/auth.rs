@@ -8,11 +8,11 @@ use ec_secrets_shared_library::{
 
 use super::get_repos;
 
-pub struct Auth {}
+pub struct Auth;
 
 impl Auth {
     pub fn new() -> Self {
-        Self {}
+        Self
     }
 
     pub async fn login(&mut self, creds: UserCredentials) -> Result<(), String> {

@@ -28,7 +28,6 @@ sha2 = "0.10.8"
 tokio = { version = "1.44.1", features = ["full"] }
 anyhow = "1.0.97"
 jsonwebtoken = "9.3.1"
-bcrypt = "0.17.0"
 pasetors = "0.7.2"
 ec_secrets_shared_library = {path = "../ec_secrets_shared_library"}
 log = "0.4.26"
