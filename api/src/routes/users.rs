@@ -2,7 +2,7 @@
 Custom modules
 --------------*/
 use crate::models::{DeleteUserResponse, ErrorResponse, LoginResponse, SetupResponse};
-use ec_secrets_shared_library::{
+use shared::{
     models::{User, UserCredentials, UserDocument},
     repositories::{keys::KeyRepository, users::UserRepository},
     utils::auth::{authorize_user, hash_password}

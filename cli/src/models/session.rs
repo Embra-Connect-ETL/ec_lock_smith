@@ -2,7 +2,7 @@ use home;
 use prettytable::{Cell, Row, Table};
 use std::fs;
 
-use ec_secrets_shared_library::{
+use shared::{
     models::{Secret, UserCredentials},
     repositories::{users::UserRepository, vault::VaultRepository},
     utils::auth::{decode_keys, hash_password},

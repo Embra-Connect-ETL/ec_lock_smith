@@ -5,7 +5,7 @@
 [default]
 # Network settings
 address = "0.0.0.0"               # Listen on all network interfaces
-port = 8089                       # Port number
+port = 8000                       # Port number
 workers = 16                      # Number of threads for request handling (adjust to number of CPU cores)
 keep_alive = 5                    # Keep-alive timeout in seconds
 max_blocking = 512                # Maximum number of blocking operations allowed simultaneously
@@ -33,7 +33,7 @@ key = "/private/ec_client_key.pem"       # Path to private key
 [global]
 # Global overrides for all environments
 address = "0.0.0.0"
-port = 8089
+port = 8000
 
 [global.limits]
 json = 52428800

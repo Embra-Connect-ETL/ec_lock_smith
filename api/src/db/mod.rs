@@ -1,12 +1,12 @@
 #![allow(unused)]
-use ec_secrets_shared_library::db::connect;
+use shared::db::connect;
 use rocket::fairing::AdHoc;
 use std::sync::Arc;
 
 /*-------------
 Custom modules
 ---------------*/
-use ec_secrets_shared_library::repositories::{
+use shared::repositories::{
     keys::KeyRepository, users::UserRepository, vault::VaultRepository,
 };
 

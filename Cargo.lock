@@ -146,6 +146,33 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e16d2d3311acee920a9eb8d33b8cbc1787ce4a264e85f964c2404b969bdcd487"
 
 [[package]]
+name = "api"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "base64 0.22.1",
+ "chrono",
+ "crypto",
+ "dotenvy",
+ "futures",
+ "hex",
+ "hmac",
+ "jsonwebtoken",
+ "log",
+ "pasetors",
+ "pbkdf2 0.12.2",
+ "rand 0.9.1",
+ "rocket",
+ "rust-argon2",
+ "serde",
+ "serde_derive",
+ "serde_json",
+ "sha2",
+ "shared",
+ "tokio",
+]
+
+[[package]]
 name = "arrayref"
 version = "0.3.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -467,6 +494,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f46ad14479a25103f283c0f10005961cf086d8dc42205bb44c46ac563475dca6"
 
 [[package]]
+name = "cli"
+version = "0.1.0"
+dependencies = [
+ "bcrypt",
+ "clap",
+ "home",
+ "mongodb",
+ "pasetors",
+ "prettytable",
+ "serde",
+ "shared",
+ "tokio",
+]
+
+[[package]]
 name = "colorchoice"
 version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -765,75 +807,6 @@ name = "dyn-clone"
 version = "1.0.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1c7a8fb8a9fbf66c1f703fe16184d10ca0ee9d23be5b4436400408ba54a95005"
-
-[[package]]
-name = "ec_secrets_management"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "base64 0.22.1",
- "chrono",
- "crypto",
- "dotenvy",
- "ec_secrets_shared_library",
- "futures",
- "hex",
- "hmac",
- "jsonwebtoken",
- "log",
- "pasetors",
- "pbkdf2 0.12.2",
- "rand 0.9.1",
- "rocket",
- "rust-argon2",
- "serde",
- "serde_derive",
- "serde_json",
- "sha2",
- "tokio",
-]
-
-[[package]]
-name = "ec_secrets_manager_cli"
-version = "0.1.0"
-dependencies = [
- "bcrypt",
- "clap",
- "ec_secrets_shared_library",
- "home",
- "mongodb",
- "pasetors",
- "prettytable",
- "serde",
- "tokio",
-]
-
-[[package]]
-name = "ec_secrets_shared_library"
-version = "0.1.0"
-dependencies = [
- "aes-gcm",
- "anyhow",
- "base64 0.22.1",
- "bcrypt",
- "bincode",
- "bson",
- "chacha20poly1305",
- "chrono",
- "dotenvy",
- "futures",
- "log",
- "mongodb",
- "pasetors",
- "rust-argon2",
- "schemars",
- "serde",
- "serde_derive",
- "sha2",
- "tar",
- "thiserror 2.0.12",
- "tokio",
-]
 
 [[package]]
 name = "ed25519-compact"
@@ -2616,6 +2589,33 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f40ca3c46823713e0d4209592e8d6e826aa57e928f09752619fc696c499637f6"
 dependencies = [
  "lazy_static",
+]
+
+[[package]]
+name = "shared"
+version = "0.1.0"
+dependencies = [
+ "aes-gcm",
+ "anyhow",
+ "base64 0.22.1",
+ "bcrypt",
+ "bincode",
+ "bson",
+ "chacha20poly1305",
+ "chrono",
+ "dotenvy",
+ "futures",
+ "log",
+ "mongodb",
+ "pasetors",
+ "rust-argon2",
+ "schemars",
+ "serde",
+ "serde_derive",
+ "sha2",
+ "tar",
+ "thiserror 2.0.12",
+ "tokio",
 ]
 
 [[package]]

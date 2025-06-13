@@ -1,4 +1,4 @@
-use ec_secrets_shared_library::{
+use shared::{
     db::connect,
     repositories::{keys::KeyRepository, users::UserRepository, vault::VaultRepository},
 };

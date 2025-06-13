@@ -1,7 +1,7 @@
 use home;
 use std::fs;
 
-use ec_secrets_shared_library::{
+use shared::{
     models::{User, UserCredentials},
     utils::auth::authorize_user,
 };

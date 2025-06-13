@@ -1,6 +1,6 @@
 use clap::{Arg, Command};
-use ec_secrets_manager_cli::models::{auth::Auth, session::Session};
-use ec_secrets_shared_library::models::{Secret, UserCredentials};
+use cli::models::{auth::Auth, session::Session};
+use shared::models::{Secret, UserCredentials};
 
 #[tokio::main]
 async fn main() {

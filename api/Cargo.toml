@@ -1,5 +1,5 @@
 [package]
-name = "ec_secrets_management"
+name = "api"
 version = "0.1.0"
 edition = "2021"
 
@@ -7,7 +7,7 @@ edition = "2021"
 path = "src/lib.rs"
 
 [[bin]]
-name = "ec_secrets_management"
+name = "api"
 path = "src/main.rs"
 
 [dependencies]
@@ -29,6 +29,6 @@ tokio = { version = "1.44.1", features = ["full"] }
 anyhow = "1.0.97"
 jsonwebtoken = "9.3.1"
 pasetors = "0.7.2"
-ec_secrets_shared_library = {path = "../ec_secrets_shared_library"}
+shared = { path = "../shared" }
 log = "0.4.26"
 base64 = "0.22.1"

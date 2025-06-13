@@ -1,4 +1,4 @@
-use ec_secrets_shared_library::utils::auth::decode_keys;
+use shared::utils::auth::decode_keys;
 use pasetors::{
     claims::{Claims, ClaimsValidationRules},
     public,
@@ -14,7 +14,7 @@ use rocket::{
 };
 use std::sync::Arc;
 
-use ec_secrets_shared_library::repositories::keys::KeyRepository;
+use shared::repositories::keys::KeyRepository;
 
 pub struct TokenGuard(pub Claims);
 
