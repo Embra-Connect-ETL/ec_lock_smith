@@ -3,7 +3,7 @@ use crate::{
     repositories::keys::KeyRepository,
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
-use bcrypt::{hash, verify, DEFAULT_COST};
+use bcrypt::{DEFAULT_COST, hash, verify};
 use chrono::{Duration, Utc};
 use pasetors::{
     claims::Claims,

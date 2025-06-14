@@ -2,17 +2,17 @@ use home;
 use prettytable::{Cell, Row, Table};
 use std::fs;
 
-use shared::{
-    models::{Secret, UserCredentials},
-    repositories::{users::UserRepository, vault::VaultRepository},
-    utils::auth::{decode_keys, hash_password},
-};
 use pasetors::{
     Public,
     claims::{Claims, ClaimsValidationRules},
     public,
     token::UntrustedToken,
     version4::V4,
+};
+use shared::{
+    models::{Secret, UserCredentials},
+    repositories::{users::UserRepository, vault::VaultRepository},
+    utils::auth::{decode_keys, hash_password},
 };
 
 use super::get_repos;
@@ -73,7 +73,6 @@ impl Session {
             Cell::new("Email"),
             Cell::new("CreatedAt"),
         ]));
-
 
         let Some(user_repo) = &self.user_repo else {
             return Err("failed to connect to the database".to_owned());
