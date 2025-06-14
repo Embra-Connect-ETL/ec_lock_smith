@@ -1,14 +1,12 @@
 #![allow(unused)]
-use shared::db::connect;
 use rocket::fairing::AdHoc;
+use shared::db::connect;
 use std::sync::Arc;
 
 /*-------------
 Custom modules
 ---------------*/
-use shared::repositories::{
-    keys::KeyRepository, users::UserRepository, vault::VaultRepository,
-};
+use shared::repositories::{keys::KeyRepository, users::UserRepository, vault::VaultRepository};
 
 pub fn init() -> AdHoc {
     AdHoc::on_ignite(

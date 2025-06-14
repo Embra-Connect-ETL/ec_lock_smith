@@ -1,17 +1,20 @@
 /*-------------
 Custom modules
 --------------*/
-use crate::models::{DeleteUserResponse, ErrorResponse, LoginResponse, SetupResponse};
+use crate::{
+    models::{ErrorResponse, SuccessResponse},
+    request_guards::TokenGuard,
+};
 use shared::{
     models::{User, UserCredentials, UserDocument},
     repositories::{keys::KeyRepository, users::UserRepository},
-    utils::auth::{authorize_user, hash_password}
+    utils::auth::{authorize_user, hash_password},
 };
 
 /*-------------
 3rd party modules
 --------------*/
-use rocket::http::Status;
+use rocket::http::{Cookie, CookieJar, Status};
 use rocket::serde::json::Json;
 use rocket::{delete, get, post, put, routes, State};
 
@@ -24,7 +27,7 @@ use std::sync::Arc;
 pub async fn setup(
     repo: &State<Arc<UserRepository>>,
     credentials: Json<UserCredentials>,
-) -> Result<Json<SetupResponse>, Json<ErrorResponse>> {
+) -> Result<Json<SuccessResponse>, Json<ErrorResponse>> {
     // Check if the user already exists
     if let Ok(Some(_)) = repo.get_user_by_email(&credentials.email).await {
         return Err(Json(ErrorResponse {
@@ -38,7 +41,7 @@ pub async fn setup(
         Err(_e) => {
             return Err(Json(ErrorResponse {
                 status: Status::InternalServerError.code,
-                message: "Internal server error".to_string(),
+                message: "Something went wrong, please try again later".to_string(),
             }));
         }
     };
@@ -53,7 +56,7 @@ pub async fn setup(
         }
     };
 
-    Ok(Json(SetupResponse {
+    Ok(Json(SuccessResponse {
         status: Status::Ok.code,
         message: "User registered successfully".to_string(),
     }))
@@ -64,19 +67,20 @@ pub async fn login(
     repo: &State<Arc<UserRepository>>,
     key_repo: &State<Arc<KeyRepository>>,
     credentials: Json<UserCredentials>,
-) -> Result<Json<LoginResponse>, Json<ErrorResponse>> {
+    cookies: &CookieJar<'_>,
+) -> Result<Json<SuccessResponse>, Json<ErrorResponse>> {
     let user_document = match repo.get_user_by_email(&credentials.email).await {
         Ok(Some(user_document)) => user_document,
         Ok(None) => {
             return Err(Json(ErrorResponse {
                 status: Status::Unauthorized.code,
-                message: "Invalid email or password".to_string(),
+                message: "Wrong email or password".to_string(),
             }))
         }
         Err(_) => {
             return Err(Json(ErrorResponse {
                 status: Status::InternalServerError.code,
-                message: "Internal server error".to_string(),
+                message: "Something went wrong, please try again later".to_string(),
             }))
         }
     };
@@ -93,56 +97,71 @@ pub async fn login(
         Err(_) => {
             return Err(Json(ErrorResponse {
                 status: Status::Unauthorized.code,
-                message: "Invalid email or password".to_string(),
+                message: "Wrong email or password".to_string(),
             }))
         }
     };
 
-    Ok(Json(LoginResponse {
+    // Set the token cookie (HTTP-only, secure)
+    let cookie = Cookie::build(("auth_token", token.clone()))
+        .http_only(true)
+        .secure(false) // Switch to HTTPS
+        .path("/");
+
+    cookies.add(cookie);
+
+    Ok(Json(SuccessResponse {
         status: Status::Ok.code,
-        token,
+        message: token,
     }))
 }
 
-#[get("/users")]
-pub async fn list_users(
-    repo: &State<Arc<UserRepository>>,
-) -> Result<Json<Vec<UserDocument>>, Json<ErrorResponse>> {
-    let users = match repo.list_users().await {
-        Ok(users) => users,
-        Err(_) => {
-            return Err(Json(ErrorResponse {
-                status: Status::InternalServerError.code,
-                message: "Internal server error".to_string(),
-            }))
-        }
-    };
-
-    Ok(Json(users))
+#[post("/logout")]
+pub fn logout(cookies: &CookieJar<'_>) -> Json<SuccessResponse> {
+    cookies.remove(Cookie::build(("auth_token", "")).path("/"));
+    Json(SuccessResponse {
+        status: 200,
+        message: "Logged out successfully".to_string(),
+    })
 }
 
-#[get("/users/<id>")]
+#[get("/users/<email>")]
 pub async fn get_user(
     repo: &State<Arc<UserRepository>>,
-    id: String,
+    email: &str,
+    token: TokenGuard,
 ) -> Result<Json<UserDocument>, Json<ErrorResponse>> {
-    let user = match repo.get_user_by_id(&id).await {
-        Ok(Some(user)) => user,
-        Ok(None) => {
+    // Extract the subject (user Email) from the token
+    let subject = match token.0.get_claim("sub").and_then(|sub| sub.as_str()) {
+        Some(sub) => sub,
+        None => {
             return Err(Json(ErrorResponse {
-                status: Status::NotFound.code,
-                message: "User not found".to_string(),
-            }))
-        }
-        Err(_) => {
-            return Err(Json(ErrorResponse {
-                status: Status::InternalServerError.code,
-                message: "Internal server error".to_string(),
+                status: Status::Unauthorized.code,
+                message: "Insufficient permissions.".to_string(),
             }))
         }
     };
 
-    Ok(Json(user))
+    // Check if the subject matches the requested email
+    if subject != email {
+        return Err(Json(ErrorResponse {
+            status: Status::Unauthorized.code,
+            message: "You are not authorized to access this user.".to_string(),
+        }));
+    }
+
+    // Fetch the user
+    match repo.get_user_by_email(&email).await {
+        Ok(Some(user)) => Ok(Json(user)),
+        Ok(None) => Err(Json(ErrorResponse {
+            status: Status::NotFound.code,
+            message: "User not found.".to_string(),
+        })),
+        Err(_) => Err(Json(ErrorResponse {
+            status: Status::InternalServerError.code,
+            message: "Something went wrong, please try again later.".to_string(),
+        })),
+    }
 }
 
 #[put("/update/<id>", data = "<credentials>")]
@@ -167,7 +186,7 @@ pub async fn update_user(
         Err(_) => {
             return Err(Json(ErrorResponse {
                 status: Status::InternalServerError.code,
-                message: "Internal server error".to_string(),
+                message: "Something went wrong, please try again later".to_string(),
             }))
         }
     };
@@ -186,7 +205,7 @@ pub async fn update_user(
         Err(_) => {
             return Err(Json(ErrorResponse {
                 status: Status::InternalServerError.code,
-                message: "Internal server error".to_string(),
+                message: "Something went wrong, please try again later".to_string(),
             }))
         }
     };
@@ -198,9 +217,9 @@ pub async fn update_user(
 pub async fn delete_user(
     repo: &State<Arc<UserRepository>>,
     id: String,
-) -> Result<Json<DeleteUserResponse>, Json<ErrorResponse>> {
+) -> Result<Json<SuccessResponse>, Json<ErrorResponse>> {
     match repo.delete_user(&id).await {
-        Ok(Some(_)) => Ok(Json(DeleteUserResponse {
+        Ok(Some(_)) => Ok(Json(SuccessResponse {
             status: Status::Ok.code,
             message: "User deleted successfully".to_string(),
         })),
@@ -213,19 +232,12 @@ pub async fn delete_user(
         Err(_) => {
             return Err(Json(ErrorResponse {
                 status: Status::InternalServerError.code,
-                message: "Internal server error".to_string(),
+                message: "Something went wrong, please try again later".to_string(),
             }))
         }
     }
 }
 
 pub fn user_routes() -> Vec<rocket::Route> {
-    routes![
-        setup,
-        login,
-        // list_users, - This endpoint will be used for administrative processes
-        get_user,
-        update_user,
-        delete_user
-    ]
+    routes![setup, login, logout, get_user, update_user, delete_user]
 }

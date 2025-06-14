@@ -9,14 +9,14 @@ extern crate rocket;
 extern crate crypto;
 extern crate log;
 
-mod custom_catchers;
+mod catchers;
 mod db;
 mod fairings;
 mod models;
 mod request_guards;
 mod routes;
 
-use custom_catchers::*;
+use catchers::*;
 use routes::users::user_routes;
 use routes::vault::vault_routes;
 

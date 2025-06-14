@@ -1,4 +1,3 @@
-use shared::utils::auth::decode_keys;
 use pasetors::{
     claims::{Claims, ClaimsValidationRules},
     public,
@@ -6,15 +5,15 @@ use pasetors::{
     version4::V4,
     Public,
 };
-use rocket::async_trait;
 use rocket::{
+    async_trait,
     http::Status,
-    request::{FromRequest, Outcome},
-    Request, State,
+    request::{FromRequest, Outcome, Request},
+    State,
 };
-use std::sync::Arc;
-
 use shared::repositories::keys::KeyRepository;
+use shared::utils::auth::decode_keys;
+use std::sync::Arc;
 
 pub struct TokenGuard(pub Claims);
 
@@ -25,39 +24,43 @@ impl<'r> FromRequest<'r> for TokenGuard {
     async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
         let key_repo = match request.guard::<&State<Arc<KeyRepository>>>().await {
             Outcome::Success(state) => state,
-            _ => return Outcome::Forward(Status::InternalServerError),
+            _ => return Outcome::Error((Status::InternalServerError, Status::InternalServerError)),
         };
 
-        let auth_header = request.headers().get_one("Authorization");
+        // Try to extract from Authorization header
+        let header_token = request
+            .headers()
+            .get_one("Authorization")
+            .and_then(|auth| auth.strip_prefix("Bearer ").map(str::trim));
 
-        match auth_header {
-            Some(token) if token.starts_with("Bearer ") => {
-                let token = token.trim_start_matches("Bearer ").trim();
-                let validation_rules = ClaimsValidationRules::new();
-                if let Ok(untrusted_token) = UntrustedToken::<Public, V4>::try_from(token) {
-                    if let Ok(kp) = decode_keys(key_repo).await {
-                        if let Ok(trusted_token) =
-                            public::verify(&kp.1, &untrusted_token, &validation_rules, None, None)
-                        {
-                            if let Some(claims) = trusted_token.payload_claims() {
-                                Outcome::Success(TokenGuard(claims.clone()))
-                            } else {
-                                Outcome::Error((Status::Unauthorized, Status::Unauthorized))
-                            }
-                        } else {
-                            Outcome::Error((
-                                Status::InternalServerError,
-                                Status::InternalServerError,
-                            ))
-                        }
-                    } else {
-                        Outcome::Error((Status::InternalServerError, Status::InternalServerError))
+        // Or from cookie
+        let cookie_token = request.cookies().get("auth_token").map(|c| c.value());
+
+        let token = header_token.or(cookie_token);
+
+        let token = match token {
+            Some(t) => t,
+            None => return Outcome::Error((Status::Unauthorized, Status::Unauthorized)),
+        };
+
+        let validation_rules = ClaimsValidationRules::new();
+
+        match UntrustedToken::<Public, V4>::try_from(token) {
+            Ok(untrusted_token) => match decode_keys(key_repo).await {
+                Ok(kp) => {
+                    match public::verify(&kp.1, &untrusted_token, &validation_rules, None, None) {
+                        Ok(trusted_token) => match trusted_token.payload_claims() {
+                            Some(claims) => Outcome::Success(TokenGuard(claims.clone())),
+                            None => Outcome::Error((Status::Unauthorized, Status::Unauthorized)),
+                        },
+                        Err(_) => Outcome::Error((Status::Unauthorized, Status::Unauthorized)),
                     }
-                } else {
+                }
+                Err(_) => {
                     Outcome::Error((Status::InternalServerError, Status::InternalServerError))
                 }
-            }
-            _ => Outcome::Error((Status::Unauthorized, Status::Unauthorized)),
+            },
+            Err(_) => Outcome::Error((Status::Unauthorized, Status::Unauthorized)),
         }
     }
 }

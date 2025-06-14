@@ -27,7 +27,7 @@ pub async fn create_secret(
     repo: &State<Arc<VaultRepository>>,
     secret: Json<Secret>,
     claims: TokenGuard,
-) -> Result<Json<CreateSecretResponse>, Json<ErrorResponse>> {
+) -> Result<Json<SuccessResponse>, Json<ErrorResponse>> {
     if let Some(created_by) = claims.0.get_claim("sub") {
         if let Some(created_by) = created_by.as_str() {
             match repo
@@ -36,7 +36,7 @@ pub async fn create_secret(
             {
                 Ok(_) => {
                     info!("Vault entry created successfully.");
-                    Ok(Json(CreateSecretResponse {
+                    Ok(Json(SuccessResponse {
                         status: Status::Ok.code,
                         message: "Vault entry created successfully".to_string(),
                     }))
@@ -116,6 +116,7 @@ pub async fn get_entry(
             message: "Invalid ID provided.".to_string(),
         }));
     }
+
     if let Some(subject) = token.0.get_claim("sub") {
         if let Some(subject) = subject.as_str() {
             match repo.get_secret_by_id(&id, subject).await {
@@ -208,7 +209,7 @@ pub async fn delete_entry(
     repo: &State<Arc<VaultRepository>>,
     id: &str,
     token: TokenGuard,
-) -> Result<Json<DeleteSecretResponse>, Json<ErrorResponse>> {
+) -> Result<Json<SuccessResponse>, Json<ErrorResponse>> {
     if id.trim().is_empty() || id.contains(char::is_whitespace) {
         error!("Invalid request: Provided ID '{}' is invalid.", id);
         return Err(Json(ErrorResponse {
@@ -222,7 +223,7 @@ pub async fn delete_entry(
             match repo.delete_secret(&id, subject).await {
                 Ok(Some(_)) => {
                     info!("Successfully deleted vault entry with ID: {}", id);
-                    Ok(Json(DeleteSecretResponse {
+                    Ok(Json(SuccessResponse {
                         status: Status::Ok.code,
                         message: "Vault entry deleted successfully.".to_string(),
                     }))
