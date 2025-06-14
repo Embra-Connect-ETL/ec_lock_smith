@@ -9,9 +9,11 @@ use mongodb::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::{models::UserDocument, utils::auth::hash_password};
+use crate::{
+    models::{UserDocument, default_datetime},
+    utils::auth::hash_password,
+};
 
-#[derive(Debug)]
 pub struct UserRepository {
     collection: Collection<UserDocument>,
 }
@@ -39,6 +41,10 @@ impl UserRepository {
             id: ObjectId::new(),
             email: email.to_string(),
             password: password.to_string(),
+            has_paid: false,
+            subscription_start: default_datetime(),
+            subscription_expires: default_datetime(),
+            last_payment_order_id: None,
             created_at: Utc::now(),
         };
 
