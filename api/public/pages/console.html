@@ -98,35 +98,25 @@
     </div>
 
     <script>
-        function getCookie(cname) {
-            let name = cname + "=";
-            let ca = document.cookie.split(';');
-            console.log(name);
-            
-            console.log(ca);
-            
-            for (let i = 0; i < ca.length; i++) {
-                let c = ca[i];
-                while (c.charAt(0) == ' ') {
-                    c = c.substring(1);
-                }
-                if (c.indexOf(name) == 0) {
-                    return c.substring(name.length, c.length);
-                }
-            }
-            return "";
+        function deleteCookie(name) {
+        document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
         }
 
-        document.addEventListener("DOMContentLoaded", function () {
-            // Check if auth_token cookie exists
-            const hasAuthCookie = getCookie("auth_token");
+        document.querySelector(".logout-btn").addEventListener("click", async () => {
+            try {
+                const response = await fetch(`${API_BASE_URL}/logout`, {
+                    method: "POST",
+                    credentials: "include", // include cookies
+                });
 
-            console.log(hasAuthCookie);
+                if (!response.ok) {
+                    throw new Error("Failed to logout");
+                }
 
+                const result = await response.json();
 
-            if (!hasAuthCookie) {
                 Toastify({
-                    text: "Unauthorized access!",
+                    text: result.message,
                     duration: 3000,
                     gravity: "top",
                     position: "right",
@@ -142,36 +132,17 @@
                     }
                 }).showToast();
 
-                // setTimeout(() => {
-                //     window.location.href = "./login.html";
-                // });
+                // Clear any client storage
+                sessionStorage.clear();
+                deleteCookie("ec_id");
+                // Replace current history state to disable going back
+                window.location.replace("./login.html");
+                
+            } catch (err) {
+                console.error("Logout error:", err);
+                sessionStorage.clear();
+                window.location.replace("./login.html");
             }
-        });
-
-        document.querySelector(".logout-btn").addEventListener("click", () => {
-            // Optionally clear session data
-            sessionStorage.clear();
-
-            Toastify({
-                text: "Logging out...",
-                duration: 3000,
-                gravity: "top",
-                position: "right",
-                style: {
-                    background: "#ffa07a",
-                    color: "#ffffff",
-                    borderRadius: "24px",
-                    fontWeight: "600",
-                    fontSize: "14px",
-                    letterSpacing: "1.4px",
-                    textTransform: "capitalize",
-                    boxShadow: "0 1rem 1rem 0 rgba(0, 0, 0, .05)",
-                }
-            }).showToast();
-
-            setTimeout(() => {
-                window.location.href = "./login.html";
-            }, 500);
         });
 
         const API_BASE_URL = "http://localhost:8000";
@@ -250,7 +221,7 @@
                             status: "Active"
                         }));
                     } catch (error) {
-                        this.displayToaster(error.message, "error");
+                        this.displayToaster("Couldn't retrieve secrets, please try signing in again", "error");
                     }
                 },
 
@@ -282,10 +253,12 @@
                         if (!response.ok) throw new Error("Failed to create secret");
 
                         this.fetchSecrets();
+                        this.newSecret.name = "";
+                        this.newSecret.value = "";
                         this.showModal = false;
                         this.displayToaster("Secret created successfully!", "success");
                     } catch (error) {
-                        this.displayToaster(error.message, "error");
+                        this.displayToaster("Couldn't create secret, please try signing in again", "error");
                     }
                 },
 
@@ -313,7 +286,7 @@
                         this.displayToaster("Selected secrets deleted successfully.", "success");
 
                     } catch (error) {
-                        this.displayToaster(error.message, "error");
+                        this.displayToaster("Couldn't delete secret, please try signing in again", "error");
                     }
                 }
             },
