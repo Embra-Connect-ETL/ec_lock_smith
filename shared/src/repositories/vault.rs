@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-use crate::models::VaultDocument;
+use crate::models::{VaultDocument, VaultMetadataDocument};
 use crate::utils::vault::{decrypt, encrypt};
 
 #[derive(Debug)]
@@ -31,7 +31,7 @@ impl VaultRepository {
 
         let encryption_key = format!(
             "{}",
-            std::env::var("ECS_ENCRYPTION_KEY").expect("ECS_ENCRYPTION_KEY must be set")
+            std::env::var("ECS_ENCRYPTION_KEY").expect("[ECS_ENCRYPTION_KEY] must be set")
         );
 
         Self {
@@ -79,21 +79,37 @@ impl VaultRepository {
     }
 
     /*-----------------
+    GET secret by key
+    -------------------*/
+    pub async fn get_secret_by_key(&self, key: &str, subject: &str) -> Result<Option<String>> {
+        let filter = doc! { "key": key, "created_by": subject };
+
+        if let Some(secret) = self.collection.find_one(filter).await? {
+            let encoded_value = BASE64_STANDARD.decode(&secret.value).unwrap();
+            let decrypted_value = decrypt(&encoded_value, &self.encryption_key.as_bytes()).unwrap();
+            return Ok(Some(String::from_utf8_lossy(&decrypted_value).to_string()));
+        }
+        Ok(None)
+    }
+
+    /*-----------------
     GET secret by author
     -------------------*/
-    pub async fn get_secret_by_author(&self, created_by: &str) -> Result<Vec<VaultDocument>> {
+    pub async fn get_secret_by_author(
+        &self,
+        created_by: &str,
+    ) -> Result<Vec<VaultMetadataDocument>> {
         let filter = doc! { "created_by": created_by };
         let mut cursor = self.collection.find(filter).await?;
         let mut secrets = Vec::new();
 
         while let Some(mut secret) = cursor.try_next().await? {
-            if let Ok(encoded_value) = BASE64_STANDARD.decode(&secret.value) {
-                if let Ok(decrypted_value) = decrypt(&encoded_value, self.encryption_key.as_bytes())
-                {
-                    secret.value = String::from_utf8_lossy(&decrypted_value).to_string();
-                }
-            }
-            secrets.push(secret);
+            secrets.push(VaultMetadataDocument {
+                id: secret.id,
+                key: secret.key,
+                created_by: secret.created_by,
+                created_at: secret.created_at,
+            });
         }
 
         Ok(secrets)
@@ -118,18 +134,17 @@ impl VaultRepository {
     /*-------------
     LIST all secrets
     ---------------*/
-    pub async fn list_secrets(&self, subject: &str) -> Result<Vec<VaultDocument>> {
+    pub async fn list_secrets(&self, subject: &str) -> Result<Vec<VaultMetadataDocument>> {
         let mut cursor = self.collection.find(doc! {"created_by": subject}).await?;
         let mut secrets = Vec::new();
 
         while let Some(mut secret) = cursor.try_next().await? {
-            if let Ok(encoded_value) = BASE64_STANDARD.decode(&secret.value) {
-                if let Ok(decrypted_value) = decrypt(&encoded_value, self.encryption_key.as_bytes())
-                {
-                    secret.value = String::from_utf8_lossy(&decrypted_value).to_string();
-                }
-            }
-            secrets.push(secret);
+            secrets.push(VaultMetadataDocument {
+                id: secret.id,
+                key: secret.key,
+                created_by: secret.created_by,
+                created_at: secret.created_at,
+            });
         }
 
         Ok(secrets)

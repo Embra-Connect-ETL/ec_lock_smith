@@ -87,6 +87,19 @@ pub struct VaultDocument {
     pub created_at: DateTime<Utc>,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct VaultMetadataDocument {
+    #[serde(rename = "_id")]
+    pub id: ObjectId,
+    pub key: String,
+    pub created_by: String,
+    #[serde(
+        with = "bson::serde_helpers::chrono_datetime_as_bson_datetime",
+        rename = "createdAt"
+    )]
+    pub created_at: DateTime<Utc>,
+}
+
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Clone)]
 pub struct Vault {
     #[serde(rename = "_id")]
