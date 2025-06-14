@@ -98,9 +98,33 @@
     </div>
 
     <script>
-        const token = localStorage.getItem("authToken");
-        document.addEventListener("DOMContentLoaded", function () { 
-            if (!token) {
+        function getCookie(cname) {
+            let name = cname + "=";
+            let ca = document.cookie.split(';');
+            console.log(name);
+            
+            console.log(ca);
+            
+            for (let i = 0; i < ca.length; i++) {
+                let c = ca[i];
+                while (c.charAt(0) == ' ') {
+                    c = c.substring(1);
+                }
+                if (c.indexOf(name) == 0) {
+                    return c.substring(name.length, c.length);
+                }
+            }
+            return "";
+        }
+
+        document.addEventListener("DOMContentLoaded", function () {
+            // Check if auth_token cookie exists
+            const hasAuthCookie = getCookie("auth_token");
+
+            console.log(hasAuthCookie);
+
+
+            if (!hasAuthCookie) {
                 Toastify({
                     text: "Unauthorized access!",
                     duration: 3000,
@@ -109,7 +133,7 @@
                     style: {
                         background: "#ffa07a",
                         color: "#ffffff",
-                        borderRadius: "24px 24px 24px 24px",
+                        borderRadius: "24px",
                         fontWeight: "600",
                         fontSize: "14px",
                         letterSpacing: "1.4px",
@@ -118,14 +142,15 @@
                     }
                 }).showToast();
 
-                setTimeout(() => {
-                    window.location.href = "./login.html";
-                });
+                // setTimeout(() => {
+                //     window.location.href = "./login.html";
+                // });
             }
         });
 
         document.querySelector(".logout-btn").addEventListener("click", () => {
-            localStorage.clear();
+            // Optionally clear session data
+            sessionStorage.clear();
 
             Toastify({
                 text: "Logging out...",
@@ -135,7 +160,7 @@
                 style: {
                     background: "#ffa07a",
                     color: "#ffffff",
-                    borderRadius: "24px 24px 24px 24px",
+                    borderRadius: "24px",
                     fontWeight: "600",
                     fontSize: "14px",
                     letterSpacing: "1.4px",
@@ -147,9 +172,9 @@
             setTimeout(() => {
                 window.location.href = "./login.html";
             }, 500);
-        })
+        });
 
-        const API_BASE_URL = "http://localhost:8089";
+        const API_BASE_URL = "http://localhost:8000";
         const { createApp } = Vue;
 
         createApp({
@@ -163,7 +188,7 @@
                     newSecret: {
                         name: "",
                         value: "",
-                        created_by: localStorage.getItem("ecId") || "Unknown User",
+                        created_by: sessionStorage.getItem("ec_id") || "User info not available",
                     }
                 };
             },
@@ -181,7 +206,7 @@
                         error: "#FF5733",
                         warning: "#ffa07a",
                         info: "#ffa07a"
-                    }[type] || "#ffa07a"; // Default to amber
+                    }[type] || "#ffa07a";
 
                     Toastify({
                         text: message,
@@ -203,23 +228,21 @@
 
                 async fetchSecrets() {
                     try {
-                        const response = await fetch(`${API_BASE_URL}/retrieve/vault/entries`,
-                            {
-                                method: 'GET',
-                                headers: {
-                                    'Authorization': `Bearer ${token}`,
-                                    'Content-Type': 'application/json',
-                                }
+                        const response = await fetch(`${API_BASE_URL}/retrieve/vault/entries`, {
+                            method: 'GET',
+                            credentials: 'include',
+                            headers: {
+                                'Content-Type': 'application/json'
                             }
-                        );
-                        const data = await response.json();
+                        });
 
+                        const data = await response.json();
                         if (!Array.isArray(data)) throw new Error("Invalid API response format");
 
                         this.secrets = data.map(secret => ({
                             id: secret._id?.$oid || "n/a",
-                            key: secret.key || "No name",
-                            value: secret.value || "No Value",
+                            key: secret.key || "n/a",
+                            value: secret.value || "n/a",
                             created_by: secret.created_by || "n/a",
                             created: secret.createdAt?.$date?.$numberLong
                                 ? new Date(parseInt(secret.createdAt.$date.$numberLong)).toLocaleString()
@@ -241,8 +264,6 @@
                         return;
                     }
 
-                    const author = localStorage.getItem("ecId") || "Unknown User";
-
                     const payload = {
                         key: this.newSecret.name,
                         value: this.newSecret.value,
@@ -251,7 +272,10 @@
                     try {
                         const response = await fetch(`${API_BASE_URL}/create/vault/entry`, {
                             method: "POST",
-                            headers: { 'Authorization': `Bearer ${token}`, "Content-Type": "application/json" },
+                            credentials: "include",
+                            headers: {
+                                "Content-Type": "application/json"
+                            },
                             body: JSON.stringify(payload)
                         });
 
@@ -273,7 +297,14 @@
 
                     try {
                         for (const id of this.selectedSecrets) {
-                            const response = await fetch(`${API_BASE_URL}/delete/${id}`, { method: "DELETE", headers: { 'Authorization': `Bearer ${token}`, "Content-Type": "application/json" } });
+                            const response = await fetch(`${API_BASE_URL}/delete/${id}`, {
+                                method: "DELETE",
+                                credentials: "include",
+                                headers: {
+                                    "Content-Type": "application/json"
+                                }
+                            });
+
                             if (!response.ok) throw new Error("Failed to delete secret");
                         }
 

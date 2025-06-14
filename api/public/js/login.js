@@ -1,5 +1,27 @@
 const { createApp } = Vue;
 
+function setCookie(cname, cvalue, exdays) {
+    const d = new Date();
+    d.setTime(d.getTime() + (exdays * 24 * 60 * 60 * 1000));
+    let expires = "expires=" + d.toUTCString();
+    document.cookie = cname + "=" + cvalue + ";" + expires + ";path=/";
+}
+
+function getCookie(cname) {
+    let name = cname + "=";
+    let ca = document.cookie.split(';');
+    for (let i = 0; i < ca.length; i++) {
+        let c = ca[i];
+        while (c.charAt(0) == ' ') {
+            c = c.substring(1);
+        }
+        if (c.indexOf(name) == 0) {
+            return c.substring(name.length, c.length);
+        }
+    }
+    return "";
+}
+
 createApp({
     data() {
         return {
@@ -33,14 +55,14 @@ createApp({
                     return;
                 }
 
-                // Store token and redirect
-                localStorage.setItem("authToken", data.token);
-                localStorage.setItem("ecId", this.email);
+                // Store credentials and redirect
+                sessionStorage.setItem("ec_id", this.email);
+                setCookie("ec_id", this.email, 1);
                 this.displayToaster("Login successful, redirecting...");
 
                 setTimeout(() => {
                     window.location.href = "./console.html";
-                }, 1500);
+                }, 100);
 
             } catch (error) {
                 this.displayToaster(error.message || "Something went wrong, please try again", "red");

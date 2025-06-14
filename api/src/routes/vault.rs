@@ -3,7 +3,7 @@ Custom modules
 --------------*/
 use crate::models::*;
 use crate::request_guards::TokenGuard;
-use shared::models::{Secret, VaultDocument};
+use shared::models::{Secret, VaultMetadataDocument};
 use shared::repositories::vault::VaultRepository;
 
 /*-------------
@@ -70,7 +70,7 @@ pub async fn create_secret(
 pub async fn list_entries(
     repo: &State<Arc<VaultRepository>>,
     token: TokenGuard,
-) -> Result<Json<Vec<VaultDocument>>, Json<ErrorResponse>> {
+) -> Result<Json<Vec<VaultMetadataDocument>>, Json<ErrorResponse>> {
     if let Some(subject) = token.0.get_claim("sub") {
         if let Some(subject) = subject.as_str() {
             match repo.list_secrets(subject).await {
@@ -156,6 +156,62 @@ pub async fn get_entry(
     }
 }
 
+/*-----------------------------
+ Retrieve a vault entry by key
+------------------------------*/
+#[get("/retrieve/vault/entry/key/<key>")]
+pub async fn get_entry_by_key(
+    repo: &State<Arc<VaultRepository>>,
+    key: &str,
+    token: TokenGuard,
+) -> Result<Json<String>, Json<ErrorResponse>> {
+    if key.trim().is_empty() {
+        error!("Invalid request: Provided Key is empty.");
+        return Err(Json(ErrorResponse {
+            status: Status::BadRequest.code,
+            message: "Invalid Key provided.".to_string(),
+        }));
+    }
+
+    if let Some(subject) = token.0.get_claim("sub") {
+        if let Some(subject) = subject.as_str() {
+            match repo.get_secret_by_key(&key, subject).await {
+                Ok(Some(entry)) => {
+                    info!("Successfully retrieved vault entry with Key: {}", key);
+                    Ok(Json(entry))
+                }
+                Ok(None) => {
+                    error!("Vault entry not found with Key: {}", key);
+                    Err(Json(ErrorResponse {
+                        status: Status::NotFound.code,
+                        message: "Vault entry not found.".to_string(),
+                    }))
+                }
+                Err(e) => {
+                    error!(
+                        "Failed to retrieve vault entry by Key: {}. Error: {:?}",
+                        key, e
+                    );
+                    Err(Json(ErrorResponse {
+                        status: Status::InternalServerError.code,
+                        message: "Failed to retrieve vault entry.".to_string(),
+                    }))
+                }
+            }
+        } else {
+            Err(Json(ErrorResponse {
+                status: Status::Unauthorized.code,
+                message: "Insufficient Permissions".to_string(),
+            }))
+        }
+    } else {
+        Err(Json(ErrorResponse {
+            status: Status::Unauthorized.code,
+            message: "Insufficient Permissions".to_string(),
+        }))
+    }
+}
+
 /*---------------------------------
  Retrieve a vault entry by author
 ----------------------------------*/
@@ -163,7 +219,7 @@ pub async fn get_entry(
 pub async fn get_entry_by_author(
     repo: &State<Arc<VaultRepository>>,
     created_by: &str,
-) -> Result<Json<Vec<VaultDocument>>, Json<ErrorResponse>> {
+) -> Result<Json<Vec<VaultMetadataDocument>>, Json<ErrorResponse>> {
     if created_by.trim().is_empty() {
         error!("Invalid request: Provided author name is empty.");
         return Err(Json(ErrorResponse {
@@ -266,6 +322,7 @@ pub fn vault_routes() -> Vec<rocket::Route> {
         list_entries,
         get_entry,
         get_entry_by_author,
+        get_entry_by_key,
         delete_entry
     ]
 }

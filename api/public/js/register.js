@@ -53,7 +53,7 @@ createApp({
 
                     setTimeout(() => {
                         window.location.href = "./login.html";
-                    }, 2000);
+                    }, 100);
                 }
             } catch (error) {
                 displayToaster("Something went wrong, please try again", "red");
