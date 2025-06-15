@@ -1,148 +1,291 @@
-# Locksmith - Embra Connect's Secrets Management Platform
+# 🔐 **Locksmith API Documentation**
 
-![Locksmith by Embra Connect](https://github.com/Embra-Connect-ETL/ec_secrets_management/blob/master/previews/ecs_console.png?raw=true)
+**Base URL**  
+`http://localhost:8000`
 
-## Overview
+## 🔐 Authentication
 
-Locksmith is an open-source **secrets management platform** built by **Embra Connect**. Designed with security and scalability in mind, Locksmith enables developers to securely store, retrieve, and manage sensitive data such as API keys, credentials, and encryption secrets.
+Most endpoints (except `/setup` and `/login`) require authentication using a **JWT**. You can authenticate in **two ways**:
 
-### **Key Features**
+### Option 1: Bearer Token (Authorization Header)
 
--   🔐 **Secure Vault** – Store secrets with strong encryption.
--   ⚡ **Fast Retrieval** – Optimized for high-speed access.
--   🛠 **API-First Design** – Easily integrate with existing applications.
--   🏗 **Built with Rust** – Performance and memory safety at its core.
--   🏛 **Role-Based Access Control (RBAC)** – Fine-grained permissions for users and services.
--   🔄 **Audit Logging** – Keep track of all access and modifications.
--   🌍 **Open Source** – Community-driven development.
-
-## Getting Started
-
-### **Prerequisites**
-
--   Rust (latest stable version)
--   Cargo package manager
--   MongoDB (for storage)
--   Docker (optional, for containerized deployment)
-
-### **Installation**
-
-Clone the repository and navigate to the project directory:
-
-```sh
- git clone https://github.com/Embra-Connect-ETL/ec_secrets_management.git
- cd ec_secrets_management
-```
-
-### **Building the Project**
-
-```sh
- cargo build --release
-```
-
-### **Running the Server**
-
-```sh
- cargo run
-```
-
-### **Environment Variables**
-
-Configure the `.env` file with necessary values:
-
-```env
-# Operation
-# Working with host machine
-ECS_DATABASE_URL=mongodb://ec_root:ec_root@localhost:27017/embra_connect_dev?authSource=admin
-
-# Working with docker compose
-# ECS_DATABASE_URL=mongodb://ec_root:ec_root@ec_secrets_management_storage:27017/embra_connect_dev?authSource=admin
-ECS_DATABASE_NAME=embra_connect_dev
-
-# An encryption key can be genrated via the following command: openssl rand -base64 32
-# Expected output -> IRwTgHBtmblSfAXpYOuvf4ZIhSY32JoP8TLIxeLuCrg=
-ECS_ENCRYPTION_KEY=
-# An authentication key can be genrated via the following command: openssl rand -base64 32
-# Expected output -> HEJpH886G0gArUNIYK7CLXfvOSKHBAnlJM3rVw/Tfdg=
-ECS_AUTHENTICATION_KEY=
-ECS_SIGNING_KEY=
-
-# Storage
-MONGO_INITDB_ROOT_USERNAME=ec_root # Do NOT use in production
-MONGO_INITDB_ROOT_PASSWORD=ec_root # Do NOT use in production
-MONGO_INITDB_DATABASE=embra_connect_dev # Do NOT use in production
-```
-
-## API Usage
-
-### **Authentication**
-
-All API requests must be authenticated using JWT tokens.
-
-#### **Login**
+Include the JWT in the `Authorization` header like so:
 
 ```http
-POST /login
+Authorization: Bearer <your-jwt-token>
 ```
 
-**Request Body:**
+
+### Option 2: Cookie-Based Authentication
+
+After a successful login, the server returns a `Set-Cookie` header with the token:
+
+```http
+Set-Cookie: auth_token=<TOKEN>; HttpOnly; Path=/; SameSite=Strict;
+```
+
+You can then include it in subsequent requests like:
+
+```http
+Cookie: auth_token=<TOKEN>
+```
+
+This works automatically in most browser-based clients and tools like Postman (if `Send cookies` is enabled) or when using `curl`:
+
+```bash
+curl -X GET http://localhost:8000/retrieve/vault/entries \
+  --cookie "auth_token=<TOKEN>"
+
+```
+
+> 🔐 **Note**:  
+> The cookie is `HttpOnly`, meaning it's inaccessible to JavaScript in a browser — enhancing security against XSS attacks.
+
+----------
+
+### Important CORS Note
+
+To support cookies across domains (e.g., frontend at `localhost:3000`, backend at `localhost:8000`):
+
+-   Set `Access-Control-Allow-Credentials: true`
+-   Set `Access-Control-Allow-Origin: <frontend-origin>`
+-   Ensure client requests use `withCredentials: true`
+
+* Both **Client** & **API** are currently hosted on the **same domain**.
+
+## 👤 User Endpoints
+
+### ➕ Create User
+
+**POST** `/setup`  
+Create a new user account.
 
 ```json
 {
-  "email": "user@domain.com",
-  "password": "yourpassword"
+  "email": "user@example.com",
+  "password": "ThisShouldBeKeptSecret"
 }
 ```
+
+**Response:**
+
+```json
+{
+  "id": "684d5b36cd2cc6f9df1ae31d",
+  "email": "user@example.com",
+  "created_at": "2025-06-14T12:00:00Z"
+}
+```
+
+
+### 🔐 Login
+
+**POST** `/login`  
+Authenticate user and receive JWT token.
+
+```json
+{
+  "email": "user@example.com",
+  "password": "ThisShouldBeKeptSecret"
+}
+```
+
+**Response:**
+
+```json
+{
+  "token": "<TOKEN>"
+}
+```
+
+----------
+
+### 🔓 Logout
+
+**POST** `/logout`  
+Invalidates user session (JWT blacklist, if implemented).  
+Requires `Authorization` header.
+
+
+
+### 👁️‍🗨️ Get User by Email
+
+**GET** `/users/{email}`  
+Returns a user document (no password).
+
+**Response:**
+
+```json
+{
+  "id": "684d5b36cd2cc6f9df1ae31d",
+  "email": "user@example.com",
+  "created_at": "2025-06-14T12:00:00Z"
+}
+```
+
+### ✏️ Update User
+
+**PUT** `/update/{user_id}`  
+Update email and/or password.
+
+```json
+{
+  "email": "new@example.com",
+  "password": "UpdatedPassword123"
+}
+```
+
+**Response:**
+
+```json
+{
+  "id": "684d5b36cd2cc6f9df1ae31d",
+  "email": "new@example.com",
+  "updated_at": "2025-06-14T14:01:00Z"
+}
+```
+
+
+### ❌ Delete User
+
+**DELETE** `/delete/user/{user_id}`  
+Deletes a user and associated vault entries.
 
 **Response:**
 
 ```json
 {
   "status": 200,
-  "token": "your_auth_token"
+  "message": "User deleted successfully. 3 vault entries removed."
 }
 ```
 
-### **Retrieve Secrets**
 
-```http
-GET /retrieve/vault/entries
+
+## 🔐 Vault Endpoints
+
+> ⚠️ All Vault endpoints require authentication and use the **user's email (sub)** claim internally.
+
+----------
+
+### ➕ Create Vault Entry
+
+**POST** `/create/vault/entry`
+
+```json
+{
+  "key": "test",
+  "value": "ThisShouldBeKeptSecret"
+}
 ```
+
+✅ Uses the token's `sub` claim to identify creator — no need to pass `created_by`.
+
+**Response:**
+
+```json
+{
+  "status": 200,
+  "message": "Vault entry created successfully"
+}
+```
+
+### 📋 List All Vault Entries
+
+**GET** `/retrieve/vault/entries`
+
+Returns metadata (no values) for entries created by the authenticated user.
 
 **Response:**
 
 ```json
 [
   {
-    "id": "1",
-    "name": "API_KEY",
-    "value": "sk-123456",
-    "created_at": "2025-03-22T12:34:56Z"
+    "id": "684ea535b5abcb414f2afdc5",
+    "key": "test",
+    "created_by": "user@example.com",
+    "created_at": "2025-06-14T12:30:00Z"
   }
 ]
 ```
 
-## License
+### 🔍 Get Entry by Key
 
-Locksmith is licensed under the **MIT License**. See [LICENSE](https://chatgpt.com/c/LICENSE) for more details.
+**GET** `/retrieve/vault/entry/key/{key}`
 
-## Contributing
+Returns decrypted secret value for matching key (if owned by user).
 
-We welcome contributions! To get started:
+**Response:**
 
-1.  Fork the repository.
-2.  Create a new branch (`git checkout -b feature-name`).
-3.  Commit your changes (`git commit -m "Add new feature"`).
-4.  Push to your branch (`git push origin feature-name`).
-5.  Create a Pull Request.
+```json
+"ThisShouldBeKeptSecret"
+```
 
-## Contact & Community
+### 🔍 Get Entry by ID
 
-For discussions, issues, and support:
+**GET** `/retrieve/vault/entries/{id}`
 
--   **GitHub Issues**: [Report Issues](https://github.com/Embra-Connect-ETL/ec_secrets_management/issues)
--   **Embra Connect Website**: [www.embraconnect.com](https://www.embraconnect.com/)
+Returns full vault entry by ID (if owned by user).
 
-----------
+**Response:**
 
-🔑 **Locksmith** – Your secure vault for managing secrets, built with Rust.
+```json
+{
+  "key": "test",
+  "value": "ThisShouldBeKeptSecret"
+}
+```
+
+### 🔍 Get Entries by Author (Email)
+
+**GET** `/retrieve/vault/entry/{email}`
+
+Returns vault metadata for a given user **(used internally or by admins)**.  
+Regular users will only see their own entries.
+
+**Response:**
+
+```json
+[
+  {
+    "id": "684ea535b5abcb414f2afdc5",
+    "key": "test",
+    "created_by": "user@example.com",
+    "created_at": "2025-06-14T12:30:00Z"
+  }
+]
+```
+
+### ❌ Delete Vault Entry
+
+**DELETE** `/delete/{vault_entry_id}`
+
+Deletes the entry if the authenticated user is the creator.
+
+**Response:**
+
+```json
+{
+  "status": 200,
+  "message": "Vault entry deleted successfully"
+}
+```
+
+## 🧪 Test Tokens Easily
+
+Use Postman or CLI:
+
+```bash
+curl -X POST http://localhost:8000/login \
+  -H "Content-Type: application/json" \
+  -d '{"email": "user@example.com", "password": "ThisShouldBeKeptSecret"}'
+```
+
+Then copy the token and add it to `Authorization: Bearer <token>` for all protected routes.
+
+## 📝 Notes
+
+-   All IDs (users and vault entries) are MongoDB `ObjectId` strings.
+-   All timestamps are UTC ISO 8601 format.
+-   Sensitive data like secrets are encrypted at rest and decrypted at request time.
+ 

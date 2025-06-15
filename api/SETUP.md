@@ -41,24 +41,19 @@ You'll need to ensure the `x86_64-unknown-linux-musl` target is installed and th
 Use the following Dockerfile configuration:
 
 ```dockerfile
-# Use the official Rust image as the base image
 FROM rust:1.73-slim-bullseye
 
-# Set the working directory inside the container
 WORKDIR /app
 
-# Set Rocket environment variables
 ENV ROCKET_ADDRESS=0.0.0.0
-ENV ROCKET_PORT=8089
+ENV ROCKET_PORT=8000
 
-# Copy the pre-built binary into the container
-COPY ./target/x86_64-unknown-linux-musl/release/ec_secrets_management /app/
+COPY ./target/x86_64-unknown-linux-musl/release/api /app/
+COPY ./api/public /app/public/
 
-# Set the default command to run the binary
-CMD ["/app/ec_secrets_management"]
+CMD ["/app/api"]
 
-# Expose the port Rocket will listen on
-EXPOSE 8089
+EXPOSE 8000
 ```
 
 ----------
@@ -75,23 +70,23 @@ docker build -t ec_secrets_management .
 
 ### **4. Run the Docker Container**
 
-To run the container locally, map the exposed port (`8089`) to your local machine:
+To run the container locally, map the exposed port (`8000`) to your local machine:
 
 ```bash
-docker run -p 8089:8089 ec_secrets_management
+docker run -p 8000:8000 ec_secrets_management
 ```
 
 If your application uses environment variables from a `.env` file, pass them using the `--env-file` flag:
 
 ```bash
-docker run -p 8089:8089 --env-file .env ec_secrets_management
+docker run -p 8000:8000 --env-file .env ec_secrets_management
 ```
 
 ----------
 
 ### **5. Access the Application**
 
--   The service will be accessible at: **[http://localhost:8089](http://localhost:8089/)**
+-   The service will be accessible at: **[http://localhost:8000](http://localhost:8000/)**
 
 ----------
 
@@ -116,7 +111,7 @@ docker run -p 8089:8089 --env-file .env ec_secrets_management
 To test the binary locally (without Docker), you can run it directly:
 
 ```bash
-ROCKET_ADDRESS=0.0.0.0 ROCKET_PORT=8089 ./target/x86_64-unknown-linux-musl/release/ec_secrets_management
+ROCKET_ADDRESS=0.0.0.0 ROCKET_PORT=8000 ./target/x86_64-unknown-linux-musl/release/ec_secrets_management
 ```
 
 * Alternatively, you can use a similar `Rocket.toml` configuration:
@@ -125,7 +120,7 @@ ROCKET_ADDRESS=0.0.0.0 ROCKET_PORT=8089 ./target/x86_64-unknown-linux-musl/relea
 [default]
 # Network settings
 address = "0.0.0.0"  # Listen on all network interfaces
-port = 8089  # Port number
+port = 8000  # Port number
 workers = 16  # Number of threads for request handling (adjust to number of CPU cores)
 keep_alive = 5  # Keep-alive timeout in seconds
 max_blocking = 512  # Maximum number of blocking operations allowed simultaneously
@@ -153,7 +148,7 @@ key = "/path/to/private.key" # Path to private key
 [global]
 # Global overrides for all environments
 address = "0.0.0.0"
-port = 8089
+port = 8000
 
 [global.limits]
 json = 52428800
