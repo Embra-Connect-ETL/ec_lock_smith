@@ -4,6 +4,7 @@ Custom modules
 use crate::models::*;
 use crate::request_guards::TokenGuard;
 use shared::models::{Secret, VaultMetadataDocument};
+use shared::repositories::users::UserRepository;
 use shared::repositories::vault::VaultRepository;
 
 /*-------------
@@ -24,14 +25,15 @@ use std::sync::Arc;
 ---------------------*/
 #[post("/create/vault/entry", data = "<secret>")]
 pub async fn create_secret(
-    repo: &State<Arc<VaultRepository>>,
+    vault_repo: &State<Arc<VaultRepository>>,
+    user_repo: &State<Arc<UserRepository>>,
     secret: Json<Secret>,
     claims: TokenGuard,
 ) -> Result<Json<SuccessResponse>, Json<ErrorResponse>> {
     if let Some(created_by) = claims.0.get_claim("sub") {
         if let Some(created_by) = created_by.as_str() {
-            match repo
-                .create_secret(&secret.key, &secret.value, created_by)
+            match vault_repo
+                .create_secret(&secret.key, &secret.value, created_by, user_repo)
                 .await
             {
                 Ok(_) => {
@@ -68,12 +70,20 @@ pub async fn create_secret(
 ---------------------------*/
 #[get("/retrieve/vault/entries")]
 pub async fn list_entries(
-    repo: &State<Arc<VaultRepository>>,
+    vault_repo: &State<Arc<VaultRepository>>,
+    user_repo: &State<Arc<UserRepository>>,
     token: TokenGuard,
 ) -> Result<Json<Vec<VaultMetadataDocument>>, Json<ErrorResponse>> {
     if let Some(subject) = token.0.get_claim("sub") {
         if let Some(subject) = subject.as_str() {
-            match repo.list_secrets(subject).await {
+            let user = user_repo
+                .get_user_by_email(subject)
+                .await
+                .unwrap()
+                .ok_or_else(|| anyhow::anyhow!("User not found: {}", subject))
+                .unwrap();
+
+            match vault_repo.list_secrets(subject, user).await {
                 Ok(entries) => {
                     info!("Successfully retrieved {} vault entries.", entries.len());
                     Ok(Json(entries)) // Always return an array, even if empty
@@ -105,7 +115,8 @@ pub async fn list_entries(
 ------------------------------*/
 #[get("/retrieve/vault/entries/<id>")]
 pub async fn get_entry(
-    repo: &State<Arc<VaultRepository>>,
+    vault_repo: &State<Arc<VaultRepository>>,
+    user_repo: &State<Arc<UserRepository>>,
     id: &str,
     token: TokenGuard,
 ) -> Result<Json<String>, Json<ErrorResponse>> {
@@ -119,7 +130,14 @@ pub async fn get_entry(
 
     if let Some(subject) = token.0.get_claim("sub") {
         if let Some(subject) = subject.as_str() {
-            match repo.get_secret_by_id(&id, subject).await {
+            let user = user_repo
+                .get_user_by_email(subject)
+                .await
+                .unwrap()
+                .ok_or_else(|| anyhow::anyhow!("User not found: {}", subject))
+                .unwrap();
+
+            match vault_repo.get_secret_by_id(&id, user.id).await {
                 Ok(Some(entry)) => {
                     info!("Successfully retrieved vault entry with ID: {}", id);
                     Ok(Json(entry))
@@ -161,7 +179,8 @@ pub async fn get_entry(
 ------------------------------*/
 #[get("/retrieve/vault/entry/key/<key>")]
 pub async fn get_entry_by_key(
-    repo: &State<Arc<VaultRepository>>,
+    vault_repo: &State<Arc<VaultRepository>>,
+    user_repo: &State<Arc<UserRepository>>,
     key: &str,
     token: TokenGuard,
 ) -> Result<Json<String>, Json<ErrorResponse>> {
@@ -175,7 +194,14 @@ pub async fn get_entry_by_key(
 
     if let Some(subject) = token.0.get_claim("sub") {
         if let Some(subject) = subject.as_str() {
-            match repo.get_secret_by_key(&key, subject).await {
+            let user = user_repo
+                .get_user_by_email(subject)
+                .await
+                .unwrap()
+                .ok_or_else(|| anyhow::anyhow!("User not found: {}", subject))
+                .unwrap();
+
+            match vault_repo.get_secret_by_key(&key, user.id).await {
                 Ok(Some(entry)) => {
                     info!("Successfully retrieved vault entry with Key: {}", key);
                     Ok(Json(entry))
@@ -217,43 +243,53 @@ pub async fn get_entry_by_key(
 ----------------------------------*/
 #[get("/retrieve/vault/entry/<created_by>")]
 pub async fn get_entry_by_author(
-    repo: &State<Arc<VaultRepository>>,
+    vault_repo: &State<Arc<VaultRepository>>,
+    user_repo: &State<Arc<UserRepository>>,
     created_by: &str,
+    token: TokenGuard,
 ) -> Result<Json<Vec<VaultMetadataDocument>>, Json<ErrorResponse>> {
-    if created_by.trim().is_empty() {
-        error!("Invalid request: Provided author name is empty.");
-        return Err(Json(ErrorResponse {
-            status: Status::BadRequest.code,
-            message: "Invalid author name provided.".to_string(),
-        }));
-    }
-
-    match repo.get_secret_by_author(created_by).await {
-        Ok(secrets) if !secrets.is_empty() => {
-            info!(
-                "Successfully retrieved {} vault entries for author: {}",
-                secrets.len(),
-                created_by
-            );
-            Ok(Json(secrets))
-        }
-        Ok(_) => {
-            error!("No vault entries found for author: {}", created_by);
-            Err(Json(ErrorResponse {
+    match token.0.get_claim("sub").and_then(|sub| sub.as_str()) {
+        Some(subject) => match user_repo.get_user_by_email(subject).await {
+            Ok(Some(user)) => match vault_repo.get_secret_by_author(created_by, user.id).await {
+                Ok(secrets) if !secrets.is_empty() => {
+                    info!(
+                        "Successfully retrieved {} vault entries for author: {}",
+                        secrets.len(),
+                        subject
+                    );
+                    Ok(Json(secrets))
+                }
+                Ok(_) => {
+                    error!("No vault entries found for author: {}", subject);
+                    Err(Json(ErrorResponse {
+                        status: Status::NotFound.code,
+                        message: "No vault entries found.".to_string(),
+                    }))
+                }
+                Err(e) => {
+                    error!(
+                        "Failed to retrieve vault entries for author: {}. Error: {:?}",
+                        subject, e
+                    );
+                    Err(Json(ErrorResponse {
+                        status: Status::InternalServerError.code,
+                        message: "Failed to retrieve vault entries.".to_string(),
+                    }))
+                }
+            },
+            Ok(None) => Err(Json(ErrorResponse {
                 status: Status::NotFound.code,
-                message: "No vault entries found.".to_string(),
-            }))
-        }
-        Err(e) => {
-            error!(
-                "Failed to retrieve vault entries for author: {}. Error: {:?}",
-                created_by, e
-            );
-            Err(Json(ErrorResponse {
+                message: format!("User not found: {}", subject),
+            })),
+            Err(_) => Err(Json(ErrorResponse {
                 status: Status::InternalServerError.code,
-                message: "Failed to retrieve vault entries.".to_string(),
-            }))
-        }
+                message: "Failed to retrieve user.".to_string(),
+            })),
+        },
+        None => Err(Json(ErrorResponse {
+            status: Status::Unauthorized.code,
+            message: "Insufficient Permissions".to_string(),
+        })),
     }
 }
 
@@ -262,7 +298,8 @@ pub async fn get_entry_by_author(
 ----------------------*/
 #[delete("/delete/<id>")]
 pub async fn delete_entry(
-    repo: &State<Arc<VaultRepository>>,
+    vault_repo: &State<Arc<VaultRepository>>,
+    user_repo: &State<Arc<UserRepository>>,
     id: &str,
     token: TokenGuard,
 ) -> Result<Json<SuccessResponse>, Json<ErrorResponse>> {
@@ -276,7 +313,14 @@ pub async fn delete_entry(
 
     if let Some(subject) = token.0.get_claim("sub") {
         if let Some(subject) = subject.as_str() {
-            match repo.delete_secret(&id, subject).await {
+            let user = user_repo
+                .get_user_by_email(subject)
+                .await
+                .unwrap()
+                .ok_or_else(|| anyhow::anyhow!("User not found: {}", subject))
+                .unwrap();
+
+            match vault_repo.delete_secret(&id, user).await {
                 Ok(Some(_)) => {
                     info!("Successfully deleted vault entry with ID: {}", id);
                     Ok(Json(SuccessResponse {

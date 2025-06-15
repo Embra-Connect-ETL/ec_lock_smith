@@ -79,7 +79,7 @@ pub struct VaultDocument {
     pub id: ObjectId,
     pub key: String,
     pub value: String,
-    pub created_by: String,
+    pub created_by: ObjectId,
     #[serde(
         with = "bson::serde_helpers::chrono_datetime_as_bson_datetime",
         rename = "createdAt"

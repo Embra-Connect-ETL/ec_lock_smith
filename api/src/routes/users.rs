@@ -7,7 +7,7 @@ use crate::{
 };
 use shared::{
     models::{User, UserCredentials, UserDocument},
-    repositories::{keys::KeyRepository, users::UserRepository},
+    repositories::{keys::KeyRepository, users::UserRepository, vault::VaultRepository},
     utils::auth::{authorize_user, hash_password},
 };
 
@@ -167,7 +167,7 @@ pub async fn get_user(
 #[put("/update/<id>", data = "<credentials>")]
 pub async fn update_user(
     repo: &State<Arc<UserRepository>>,
-    id: String,
+    id: &str,
     credentials: Json<UserCredentials>,
 ) -> Result<Json<UserDocument>, Json<ErrorResponse>> {
     // Check if the email is already in use by another user
@@ -215,26 +215,38 @@ pub async fn update_user(
 
 #[delete("/delete/user/<id>")]
 pub async fn delete_user(
-    repo: &State<Arc<UserRepository>>,
-    id: String,
+    user_repo: &State<Arc<UserRepository>>,
+    vault_repo: &State<Arc<VaultRepository>>,
+    id: &str,
 ) -> Result<Json<SuccessResponse>, Json<ErrorResponse>> {
-    match repo.delete_user(&id).await {
-        Ok(Some(_)) => Ok(Json(SuccessResponse {
-            status: Status::Ok.code,
-            message: "User deleted successfully".to_string(),
+    match user_repo.delete_user(&id).await {
+        Ok(Some(user)) => {
+            // Delete all vault entries by this user
+            match vault_repo
+                .delete_secrets_by_user(user.id)
+                .await
+            {
+                Ok(deleted_count) => Ok(Json(SuccessResponse {
+                    status: Status::Ok.code,
+                    message: format!(
+                        "User deleted successfully. {} vault entries removed.",
+                        deleted_count
+                    ),
+                })),
+                Err(_) => Err(Json(ErrorResponse {
+                    status: Status::InternalServerError.code,
+                    message: "User deleted, but failed to delete associated secrets.".to_string(),
+                })),
+            }
+        }
+        Ok(None) => Err(Json(ErrorResponse {
+            status: Status::NotFound.code,
+            message: "User not found.".to_string(),
         })),
-        Ok(None) => {
-            return Err(Json(ErrorResponse {
-                status: Status::NotFound.code,
-                message: "User not found".to_string(),
-            }))
-        }
-        Err(_) => {
-            return Err(Json(ErrorResponse {
-                status: Status::InternalServerError.code,
-                message: "Something went wrong, please try again later".to_string(),
-            }))
-        }
+        Err(_) => Err(Json(ErrorResponse {
+            status: Status::InternalServerError.code,
+            message: "Something went wrong. Please try again later.".to_string(),
+        })),
     }
 }
 

@@ -19,9 +19,7 @@ pub async fn connect() -> mongodb::error::Result<(UserRepository, VaultRepositor
     let client = Client::with_options(client_options)?;
 
     let user_repo = UserRepository::new(&client, &database_name, "users");
-
     let vault_repo = VaultRepository::new(&client, &database_name, "vault");
-
     let keys_repo = KeyRepository::new(&client, &database_name, "keys");
 
     Ok((user_repo, vault_repo, keys_repo))
