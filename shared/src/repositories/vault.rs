@@ -15,6 +15,7 @@ use tokio::sync::Mutex;
 
 use super::users::UserRepository;
 use crate::models::{UserDocument, VaultDocument, VaultMetadataDocument};
+use crate::repositories::quota::{self, QuotaManager};
 use crate::utils::vault::{decrypt, encrypt};
 
 #[derive(Debug)]
@@ -49,22 +50,25 @@ impl VaultRepository {
         key: &str,
         value: &str,
         created_by: &str,
-        user_id: ObjectId,
-    ) -> Result<VaultDocument> {
+        user: &UserDocument,
+        user_repo: &UserRepository,
+    ) -> anyhow::Result<VaultDocument> {
+        QuotaManager::enforce_secret_quota(self, user).await?;
+
         let encrypted_value = encrypt(value.as_bytes(), self.encryption_key.as_bytes())
-            .map_err(|e| anyhow::anyhow!("Encryption failed: {:?}", e))
-            .unwrap();
+            .map_err(|e| anyhow::anyhow!("Encryption failed: {:?}", e))?;
         let encoded_value = BASE64_STANDARD.encode(&encrypted_value);
 
         let secret = VaultDocument {
             id: ObjectId::new(),
             key: key.to_string(),
             value: encoded_value,
-            created_by: user_id,
+            created_by: user.id,
             created_at: Utc::now(),
         };
 
         self.collection.insert_one(&secret).await?;
+        QuotaManager::update_quota_on_secret_create(user_repo, user).await?;
         Ok(secret)
     }
 
@@ -124,13 +128,21 @@ impl VaultRepository {
     /*-------------
     DELETE a secret
     ---------------*/
-    pub async fn delete_secret(&self, id: &str, user: UserDocument) -> Result<Option<String>> {
+    pub async fn delete_secret(
+        &self,
+        id: &str,
+        user: UserDocument,
+        user_repo: &UserRepository,
+    ) -> Result<Option<String>> {
         let object_id = ObjectId::parse_str(id).unwrap();
         let filter = doc! { "_id": object_id, "created_by": user.id };
 
         if let Some(secret) = self.collection.find_one_and_delete(filter).await? {
             let encoded_value = BASE64_STANDARD.decode(&secret.value).unwrap();
             let decrypted_value = decrypt(&encoded_value, &self.encryption_key.as_bytes()).unwrap();
+            QuotaManager::update_quota_on_secret_delete(user_repo, &user)
+                .await
+                .unwrap();
             return Ok(Some(String::from_utf8_lossy(&decrypted_value).to_string()));
         }
 
@@ -171,5 +183,11 @@ impl VaultRepository {
         }
 
         Ok(secrets)
+    }
+
+    pub async fn count_secrets_by_user(&self, user_id: ObjectId) -> Result<u32> {
+        let filter = doc! { "created_by": user_id };
+        let count = self.collection.count_documents(filter).await?;
+        Ok(count as u32)
     }
 }

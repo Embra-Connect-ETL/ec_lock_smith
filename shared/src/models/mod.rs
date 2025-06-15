@@ -46,6 +46,8 @@ pub struct UserDocument {
     )]
     pub subscription_expires: DateTime<Utc>,
     pub last_payment_order_id: Option<String>,
+    pub secret_quota: u32,
+    pub request_quota: u32,
 
     #[serde(
         with = "bson::serde_helpers::chrono_datetime_as_bson_datetime",

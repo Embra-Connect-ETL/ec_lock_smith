@@ -40,7 +40,7 @@ pub async fn create_secret(
                 .unwrap();
 
             match vault_repo
-                .create_secret(&secret.key, &secret.value, created_by, user.id)
+                .create_secret(&secret.key, &secret.value, created_by, &user, &user_repo)
                 .await
             {
                 Ok(_) => {
@@ -327,7 +327,7 @@ pub async fn delete_entry(
                 .ok_or_else(|| anyhow::anyhow!("User not found: {}", subject))
                 .unwrap();
 
-            match vault_repo.delete_secret(&id, user).await {
+            match vault_repo.delete_secret(&id, user, &user_repo).await {
                 Ok(Some(_)) => {
                     info!("Successfully deleted vault entry with ID: {}", id);
                     Ok(Json(SuccessResponse {

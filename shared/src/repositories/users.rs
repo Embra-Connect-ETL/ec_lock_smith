@@ -45,6 +45,8 @@ impl UserRepository {
             subscription_start: default_datetime(),
             subscription_expires: default_datetime(),
             last_payment_order_id: None,
+            secret_quota: 5,
+            request_quota: 200,
             created_at: Utc::now(),
         };
 
@@ -125,5 +127,27 @@ impl UserRepository {
         }
 
         Ok(users)
+    }
+
+    // Update request quota
+    pub async fn update_request_quota(&self, user_id: ObjectId, new_quota: u32) -> Result<()> {
+        self.collection
+            .update_one(
+                doc! {"_id": user_id},
+                doc! {"$set": {"request_quota": new_quota}},
+            )
+            .await?;
+        Ok(())
+    }
+
+    // Update secret quota
+    pub async fn update_secret_quota(&self, user_id: ObjectId, new_quota: u32) -> Result<()> {
+        self.collection
+            .update_one(
+                doc! {"_id": user_id},
+                doc! {"$set": {"secret_quota": new_quota}},
+            )
+            .await?;
+        Ok(())
     }
 }
