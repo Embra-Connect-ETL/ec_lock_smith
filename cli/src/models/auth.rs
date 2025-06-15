@@ -1,12 +1,10 @@
+use crate::config::API_BASE_URL;
 use home;
+use reqwest::Client;
+use serde::Deserialize;
+use shared::models::UserCredentials;
 use std::fs;
-
-use shared::{
-    models::{User, UserCredentials},
-    utils::auth::authorize_user,
-};
-
-use super::get_repos;
+use std::path::PathBuf;
 
 pub struct Auth;
 
@@ -16,30 +14,38 @@ impl Auth {
     }
 
     pub async fn login(&mut self, creds: UserCredentials) -> Result<(), String> {
-        let (user_repo, _, key_repo) = get_repos().await?;
+        let client = Client::new();
 
-        let user_doc = user_repo
-            .get_user_by_email(&creds.email)
+        let res = client
+            .post(format!("{}/login", API_BASE_URL))
+            .json(&creds)
+            .send()
             .await
-            .map_err(|error| error.to_string())?;
+            .map_err(|e| format!("Failed to send login request: {e:?}"))?;
 
-        if let Some(user_doc) = user_doc {
-            let user = User {
-                id: user_doc.id.to_string(),
-                email: user_doc.email.clone(),
-                password: user_doc.password.clone(),
-                created_at: user_doc.created_at.to_rfc3339(),
-            };
-
-            let token = authorize_user(&user, &creds, &key_repo).await?;
-            let Some(home_dir) = home::home_dir() else {
-                return Err("Error acccessing the home directory".to_owned());
-            };
-            let token_file = home_dir.join(".lock_smith.config");
-            fs::write(token_file, token).map_err(|error| error.to_string())?;
-        } else {
-            return Err("Invalid login credentials".to_owned());
+        if !res.status().is_success() {
+            return Err(format!("Login failed: {}", res.status()));
         }
+
+        // Deserialize message/token field
+        #[derive(Deserialize)]
+        struct LoginResponse {
+            message: String,
+        }
+
+        let login_response: LoginResponse = res
+            .json()
+            .await
+            .map_err(|e| format!("Failed to parse response JSON: {e:?}"))?;
+
+        let token = login_response.message;
+
+        let Some(home_dir) = home::home_dir() else {
+            return Err("Error accessing the home directory".to_owned());
+        };
+
+        let token_file: PathBuf = home_dir.join(".lock_smith.config");
+        fs::write(token_file, token).map_err(|error| error.to_string())?;
 
         Ok(())
     }

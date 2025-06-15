@@ -13,7 +13,7 @@ This guide will explain how to authenticate, manage users, and manage secrets wi
 Before using any commands that require access to your vault or user account, **login** first:
 
 ```bash
-ec_lock_smith login -e user@example.com -p password123
+ec_lock_smith login -e user@example.com -p ThisShouldBeKeptSecret
 ```
 
 If successful, your session will be stored for further authenticated commands.
@@ -24,19 +24,13 @@ If successful, your session will be stored for further authenticated commands.
 ### ▶ Create a new user
 
 ```bash
-ec_lock_smith users create -e newuser@example.com -p strongpassword
+ec_lock_smith users create -e newuser@example.com -p ThisShouldBeKeptSecret
 ```
 
-### ▶ List all users
+### ▶ Get a specific user by Email
 
 ```bash
-ec_lock_smith users list
-```
-
-### ▶ Get a specific user by ID
-
-```bash
-ec_lock_smith users list -i <user_id>
+ec_lock_smith users list --email user@example.com
 ```
 
 ### ▶ Delete a user by ID
@@ -62,12 +56,14 @@ ec_lock_smith secret list
 ### ▶ Retrieve a specific secret by ID
 
 ```bash
-ec_lock_smith secret list -i <secret_id>
+ec_lock_smith secret get --id <secret_id>
+ec_lock_smith secret get -i <secret_id>
 ```
 
 ### ▶ Delete a secret by ID
 
 ```bash
+ec_lock_smith secret delete --id <secret_id>
 ec_lock_smith secret delete -i <secret_id>
 ```
 
@@ -91,10 +87,12 @@ ec_lock_smith secret list
 
 # Fetch one by ID
 ec_lock_smith secret list -i 665f01bcabb3c7c347a4c9c5
+ec_lock_smith secret list --id 665f01bcabb3c7c347a4c9c5
 
 # Delete it
 ec_lock_smith secret delete -i 665f01bcabb3c7c347a4c9c5
+ec_lock_smith secret delete --id 665f01bcabb3c7c347a4c9c5
 
 # Create a user
-ec_lock_smith users create -e bob@example.com -p pass123
+ec_lock_smith users create -e bob@example.com -p ThisShouldBeKeptSecret
 ```

@@ -1,71 +1,102 @@
+use chrono::{TimeZone, Utc};
 use home;
 use prettytable::{Cell, Row, Table};
+use reqwest::{
+    Client,
+    header::{AUTHORIZATION, HeaderMap, HeaderValue},
+};
 use std::fs;
 
-use pasetors::{
-    Public,
-    claims::{Claims, ClaimsValidationRules},
-    public,
-    token::UntrustedToken,
-    version4::V4,
-};
-use shared::{
-    models::{Secret, UserCredentials},
-    repositories::{users::UserRepository, vault::VaultRepository},
-    utils::auth::{decode_keys, hash_password},
-};
-
-use super::get_repos;
+use crate::config::API_BASE_URL;
+use shared::models::{Secret, UserCredentials};
 
 pub struct Session {
-    claims: Option<Claims>,
-    user_repo: Option<UserRepository>,
-    vault_repo: Option<VaultRepository>,
+    token: Option<String>,
+    client: Client,
 }
 
 impl Session {
     pub fn new() -> Self {
         Self {
-            claims: None,
-            user_repo: None,
-            vault_repo: None,
+            token: None,
+            client: Client::new(),
         }
     }
 
-    async fn validate_session(&mut self) -> Result<(), String> {
+    async fn load_token(&mut self) -> Result<(), String> {
         let Some(home_dir) = home::home_dir() else {
-            return Err("Error acccessing the home directory".to_owned());
+            return Err("Error accessing the home directory".to_owned());
         };
         let token_file = home_dir.join(".lock_smith.config");
 
-        let token = fs::read_to_string(token_file).map_err(|error| error.to_string())?;
-
-        let untrusted_token = UntrustedToken::<Public, V4>::try_from(token.as_str())
-            .map_err(|error| error.to_string())?;
-
-        let (user_repo, vault_repo, key_repo) = get_repos().await?;
-
-        let keys = decode_keys(&key_repo).await?;
-
-        let validation_rules = ClaimsValidationRules::new();
-
-        let trusted_token =
-            public::verify(&keys.1, &untrusted_token, &validation_rules, None, None)
-                .map_err(|error| error.to_string())?;
-
-        let Some(claims) = trusted_token.payload_claims() else {
-            return Err("Token has no payload".to_owned());
-        };
-
-        self.user_repo = Some(user_repo);
-        self.claims = Some(claims.clone());
-        self.vault_repo = Some(vault_repo);
-
+        let token = fs::read_to_string(token_file).map_err(|e| e.to_string())?;
+        self.token = Some(token.trim().to_string());
         Ok(())
     }
 
-    pub async fn get_users(&mut self, id: Option<&str>) -> Result<(), String> {
-        let _ = &self.validate_session().await?;
+    fn auth_headers(&self) -> Result<HeaderMap, String> {
+        let mut headers = HeaderMap::new();
+        if let Some(ref token) = self.token {
+            let value = format!("Bearer {}", token);
+            headers.insert(
+                AUTHORIZATION,
+                HeaderValue::from_str(&value).map_err(|e| e.to_string())?,
+            );
+        }
+        Ok(headers)
+    }
+
+    pub async fn create_user(&self, creds: UserCredentials) -> Result<(), String> {
+        let url = format!("{}/setup", API_BASE_URL);
+        self.client
+            .post(url)
+            .json(&creds)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?
+            .error_for_status()
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    pub async fn get_user(&mut self, email: &str) -> Result<(), String> {
+        self.load_token().await?;
+        let url = format!("{}/users/{}", API_BASE_URL, email);
+
+        let res = self
+            .client
+            .get(url)
+            .headers(self.auth_headers()?)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?
+            .error_for_status()
+            .map_err(|e| e.to_string())?;
+
+        let user: serde_json::Value = res.json().await.map_err(|e| e.to_string())?;
+        let id = user["_id"]["$oid"].as_str().unwrap_or("N/A");
+        let email = user["email"].as_str().unwrap_or("N/A");
+
+        // Extract the createdAt timestamp string (milliseconds since epoch)
+        let created_at_millis_str = user["createdAt"]["$date"]["$numberLong"]
+            .as_str()
+            .unwrap_or("");
+
+        // Convert the string milliseconds to integer, then to chrono DateTime for readable format
+        let created_at = if let Ok(millis) = created_at_millis_str.parse::<i64>() {
+            // Convert milliseconds to seconds and nanoseconds parts
+            let secs = millis / 1000;
+            let nsecs = ((millis % 1000) * 1_000_000) as u32;
+            let dt = Utc.timestamp_opt(secs, nsecs).single();
+
+            if let Some(dt) = dt {
+                dt.format("%Y-%m-%d %H:%M:%S UTC").to_string()
+            } else {
+                "Invalid timestamp".to_string()
+            }
+        } else {
+            "N/A".to_string()
+        };
 
         let mut table = Table::new();
         table.add_row(Row::new(vec![
@@ -74,204 +105,149 @@ impl Session {
             Cell::new("CreatedAt"),
         ]));
 
-        let Some(user_repo) = &self.user_repo else {
-            return Err("failed to connect to the database".to_owned());
-        };
+        table.add_row(Row::new(vec![
+            Cell::new(id),
+            Cell::new(email),
+            Cell::new(&created_at),
+        ]));
 
-        if let Some(id) = id {
-            let _ = user_repo
-                .get_user_by_id(id)
-                .await
-                .map_err(|error| error.to_string())?
-                .map(|user| {
-                    table.add_row(Row::new(vec![
-                        Cell::new(user.id.to_string().as_str()),
-                        Cell::new(user.email.as_str()),
-                        Cell::new(user.created_at.to_string().as_str()),
-                    ]));
-                });
-        } else {
-            let users = user_repo.list_users().await.map_err(|error| {
-                println!("Error: {error:?}");
-                error.to_string()
-            })?;
-
-            users.iter().for_each(|user| {
-                table.add_row(Row::new(vec![
-                    Cell::new(user.id.to_string().as_str()),
-                    Cell::new(user.email.as_str()),
-                    Cell::new(user.created_at.to_string().as_str()),
-                ]));
-            });
-        }
         table.printstd();
-        Ok(())
-    }
-
-    pub async fn delete_user(&mut self, id: Option<&str>) -> Result<(), String> {
-        let _ = &self.validate_session().await?;
-
-        let Some(user_repo) = &self.user_repo else {
-            return Err("failed to connect to the database".to_owned());
-        };
-
-        let Some(id) = id else {
-            return Err("Please provide an id for the account to delete".to_owned());
-        };
-
-        let _ = user_repo
-            .delete_user(id)
-            .await
-            .map_err(|error| error.to_string())?;
 
         Ok(())
     }
 
-    pub async fn create_user(&mut self, creds: UserCredentials) -> Result<(), String> {
-        let _ = &self.validate_session().await?;
-
-        let Some(user_repo) = &self.user_repo else {
-            return Err("failed to connect to the database".to_owned());
-        };
-
-        let hashed_pwd = hash_password(creds.password)?;
-        let _ = user_repo
-            .create_user(&creds.email, &hashed_pwd)
+    pub async fn delete_user(&mut self, user_id: &str) -> Result<(), String> {
+        self.load_token().await?;
+        let url = format!("{}/delete/user/{}", API_BASE_URL, user_id);
+        self.client
+            .delete(url)
+            .headers(self.auth_headers()?)
+            .send()
             .await
-            .map_err(|error| error.to_string())?;
+            .map_err(|e| e.to_string())?
+            .error_for_status()
+            .map_err(|e| e.to_string())?;
         Ok(())
     }
 
     pub async fn create_secret(&mut self, secret: Secret) -> Result<(), String> {
-        let _ = self.validate_session().await?;
-
-        let Some(vault_repo) = &self.vault_repo else {
-            return Err("Failed to connect to the database".to_owned());
-        };
-
-        let Some(user_repo) = &self.user_repo else {
-            return Err("Failed to access user repository".to_owned());
-        };
-
-        let Some(claims) = &self.claims else {
-            return Err("Session invalid. Please login.".to_owned());
-        };
-
-        let Some(email) = claims.get_claim("sub").and_then(|v| v.as_str()) else {
-            return Err("Missing email in session claims".to_owned());
-        };
-
-        let user = user_repo
-            .get_user_by_email(email)
+        self.load_token().await?;
+        let url = format!("{}/create/vault/entry", API_BASE_URL);
+        self.client
+            .post(url)
+            .headers(self.auth_headers()?)
+            .json(&secret)
+            .send()
             .await
-            .map_err(|e| format!("Failed to retrieve user: {:?}", e))?
-            .ok_or_else(|| "User not found".to_string())?;
-
-        vault_repo
-            .create_secret(&secret.key, &secret.value, email, user.id)
-            .await
-            .map_err(|e| format!("Failed to create secret: {:?}", e))?;
-
+            .map_err(|e| e.to_string())?
+            .error_for_status()
+            .map_err(|e| e.to_string())?;
         Ok(())
     }
 
-    pub async fn list_secrets(&mut self, id: Option<&str>) -> Result<(), String> {
-        let _ = self.validate_session().await?;
-
-        let Some(vault_repo) = &self.vault_repo else {
-            return Err("Failed to connect to the database".to_owned());
-        };
-
-        let Some(user_repo) = &self.user_repo else {
-            return Err("Failed to access user repository".to_owned());
-        };
-
-        let Some(claims) = &self.claims else {
-            return Err("Session invalid. Please login.".to_owned());
-        };
-
-        let Some(email) = claims.get_claim("sub").and_then(|v| v.as_str()) else {
-            return Err("Missing email in session".to_owned());
-        };
-
-        let user = user_repo
-            .get_user_by_email(email)
+    pub async fn list_secrets(&mut self) -> Result<(), String> {
+        self.load_token().await?;
+        let url = format!("{}/retrieve/vault/entries", API_BASE_URL);
+        let res = self
+            .client
+            .get(url)
+            .headers(self.auth_headers()?)
+            .send()
             .await
-            .map_err(|e| format!("Failed to retrieve user: {:?}", e))?
-            .ok_or_else(|| "User not found".to_string())?;
+            .map_err(|e| e.to_string())?
+            .error_for_status()
+            .map_err(|e| e.to_string())?;
+
+        let secrets: Vec<serde_json::Value> = res.json().await.map_err(|e| e.to_string())?;
 
         let mut table = Table::new();
+        table.add_row(Row::new(vec![
+            Cell::new("Id"),
+            Cell::new("Key"),
+            Cell::new("Created By"),
+            Cell::new("Created At"),
+        ]));
 
-        if let Some(id) = id {
-            table.add_row(Row::new(vec![Cell::new("Id"), Cell::new("Secret")]));
-            let Some(secret) = vault_repo
-                .get_secret_by_id(id, user.id)
-                .await
-                .map_err(|e| format!("Failed to retrieve secret: {:?}", e))?
-            else {
-                return Err("Invalid secret id".to_owned());
+        for secret in secrets {
+            let id = secret["_id"]["$oid"].as_str().unwrap_or("");
+            let key = secret["key"].as_str().unwrap_or("");
+            let created_by = secret["created_by"].as_str().unwrap_or("");
+
+            // Extract the createdAt timestamp string (milliseconds since epoch)
+            let created_at_millis_str = secret["createdAt"]["$date"]["$numberLong"]
+                .as_str()
+                .unwrap_or("");
+
+            // Convert the string milliseconds to integer, then to chrono DateTime for readable format
+            let created_at = if let Ok(millis) = created_at_millis_str.parse::<i64>() {
+                let secs = millis / 1000;
+                let nsecs = ((millis % 1000) * 1_000_000) as u32;
+                let dt = Utc.timestamp_opt(secs, nsecs).single();
+
+                if let Some(dt) = dt {
+                    dt.format("%Y-%m-%d %H:%M:%S UTC").to_string()
+                } else {
+                    "Invalid timestamp".to_string()
+                }
+            } else {
+                "N/A".to_string()
             };
-            table.add_row(Row::new(vec![Cell::new(id), Cell::new(secret.as_str())]));
-        } else {
+
             table.add_row(Row::new(vec![
-                Cell::new("Id"),
-                Cell::new("Key"),
-                Cell::new("Created By"),
-                Cell::new("Created At"),
+                Cell::new(id),
+                Cell::new(key),
+                Cell::new(created_by),
+                Cell::new(&created_at),
             ]));
-
-            let secrets = vault_repo
-                .list_secrets(email, user)
-                .await
-                .map_err(|e| format!("Failed to list secrets: {:?}", e))?;
-
-            if secrets.is_empty() {
-                return Err("No secrets created yet.".to_owned());
-            }
-
-            for secret in secrets {
-                table.add_row(Row::new(vec![
-                    Cell::new(secret.id.to_string().as_str()),
-                    Cell::new(secret.key.as_str()),
-                    Cell::new(secret.created_by.as_str()),
-                    Cell::new(secret.created_at.to_rfc3339().as_str()),
-                ]));
-            }
         }
 
         table.printstd();
         Ok(())
     }
 
-    pub async fn delete_secret(&mut self, id: &str) -> Result<(), String> {
-        let _ = &self.validate_session().await?;
+    pub async fn get_secret_value(&mut self, id: &str) -> Result<String, String> {
+        self.load_token().await?;
+        let url = format!("{}/retrieve/vault/entries/{}", API_BASE_URL, id);
 
-        let Some(vault_repo) = &self.vault_repo else {
-            return Err("failed to connect to the database".to_owned());
-        };
-
-        let Some(user_repo) = &self.user_repo else {
-            return Err("Failed to access user repository".to_owned());
-        };
-
-        let Some(claims) = &self.claims else {
-            return Err("Session invalid. Please login.".to_owned());
-        };
-
-        let Some(email) = claims.get_claim("sub").and_then(|v| v.as_str()) else {
-            return Err("Missing email in session".to_owned());
-        };
-
-        let user = user_repo
-            .get_user_by_email(email)
+        let res = self
+            .client
+            .get(url)
+            .headers(self.auth_headers()?)
+            .send()
             .await
-            .map_err(|e| format!("Failed to retrieve user: {:?}", e))?
-            .ok_or_else(|| "User not found".to_string())?;
+            .map_err(|e| e.to_string())?
+            .error_for_status()
+            .map_err(|e| e.to_string())?;
 
-        let _ = vault_repo
-            .delete_secret(id, user)
+        // Deserialize the JSON string value
+        let value: String = res.json().await.map_err(|e| e.to_string())?;
+        Ok(value)
+    }
+
+    pub async fn delete_secret(&mut self, secret_id: &str) -> Result<String, String> {
+        self.load_token().await?;
+        let url = format!("{}/delete/{}", API_BASE_URL, secret_id);
+
+        let res = self
+            .client
+            .delete(url)
+            .headers(self.auth_headers()?)
+            .send()
             .await
-            .map_err(|error| error.to_string())?;
-        Ok(())
+            .map_err(|e| e.to_string())?;
+
+        let json: serde_json::Value = res.json().await.map_err(|e| e.to_string())?;
+
+        let message = json["message"]
+            .as_str()
+            .unwrap_or("Unknown response")
+            .to_string();
+
+        let status = json["status"].as_i64().unwrap_or(200);
+        if status != 200 {
+            Err(message)
+        } else {
+            Ok(message)
+        }
     }
 }
