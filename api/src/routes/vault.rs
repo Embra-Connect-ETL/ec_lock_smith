@@ -32,8 +32,15 @@ pub async fn create_secret(
 ) -> Result<Json<SuccessResponse>, Json<ErrorResponse>> {
     if let Some(created_by) = claims.0.get_claim("sub") {
         if let Some(created_by) = created_by.as_str() {
+            let user = user_repo
+                .get_user_by_email(created_by)
+                .await
+                .unwrap()
+                .ok_or_else(|| anyhow::anyhow!("User not found: {}", created_by))
+                .unwrap();
+
             match vault_repo
-                .create_secret(&secret.key, &secret.value, created_by, user_repo)
+                .create_secret(&secret.key, &secret.value, created_by, user.id)
                 .await
             {
                 Ok(_) => {

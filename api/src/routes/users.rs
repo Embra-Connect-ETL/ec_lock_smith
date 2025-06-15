@@ -222,10 +222,7 @@ pub async fn delete_user(
     match user_repo.delete_user(&id).await {
         Ok(Some(user)) => {
             // Delete all vault entries by this user
-            match vault_repo
-                .delete_secrets_by_user(user.id)
-                .await
-            {
+            match vault_repo.delete_secrets_by_user(user.id).await {
                 Ok(deleted_count) => Ok(Json(SuccessResponse {
                     status: Status::Ok.code,
                     message: format!(

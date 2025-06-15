@@ -49,14 +49,8 @@ impl VaultRepository {
         key: &str,
         value: &str,
         created_by: &str,
-        user_repo: &UserRepository,
+        user_id: ObjectId,
     ) -> Result<VaultDocument> {
-        let user = user_repo
-            .get_user_by_email(created_by)
-            .await?
-            .ok_or_else(|| anyhow::anyhow!("User not found for email: {}", created_by))
-            .unwrap();
-
         let encrypted_value = encrypt(value.as_bytes(), self.encryption_key.as_bytes())
             .map_err(|e| anyhow::anyhow!("Encryption failed: {:?}", e))
             .unwrap();
@@ -66,7 +60,7 @@ impl VaultRepository {
             id: ObjectId::new(),
             key: key.to_string(),
             value: encoded_value,
-            created_by: user.id,
+            created_by: user_id,
             created_at: Utc::now(),
         };
 
