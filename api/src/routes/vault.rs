@@ -90,7 +90,7 @@ pub async fn list_entries(
                 .ok_or_else(|| anyhow::anyhow!("User not found: {}", subject))
                 .unwrap();
 
-            match vault_repo.list_secrets(subject, user).await {
+            match vault_repo.list_secrets(&user, &user_repo).await {
                 Ok(entries) => {
                     info!("Successfully retrieved {} vault entries.", entries.len());
                     Ok(Json(entries)) // Always return an array, even if empty
@@ -144,7 +144,7 @@ pub async fn get_entry(
                 .ok_or_else(|| anyhow::anyhow!("User not found: {}", subject))
                 .unwrap();
 
-            match vault_repo.get_secret_by_id(&id, user.id).await {
+            match vault_repo.get_secret_by_id(&id, &user, &user_repo).await {
                 Ok(Some(entry)) => {
                     info!("Successfully retrieved vault entry with ID: {}", id);
                     Ok(Json(entry))
@@ -208,7 +208,7 @@ pub async fn get_entry_by_key(
                 .ok_or_else(|| anyhow::anyhow!("User not found: {}", subject))
                 .unwrap();
 
-            match vault_repo.get_secret_by_key(&key, user.id).await {
+            match vault_repo.get_secret_by_key(&key, &user, &user_repo).await {
                 Ok(Some(entry)) => {
                     info!("Successfully retrieved vault entry with Key: {}", key);
                     Ok(Json(entry))
@@ -257,7 +257,10 @@ pub async fn get_entry_by_author(
 ) -> Result<Json<Vec<VaultMetadataDocument>>, Json<ErrorResponse>> {
     match token.0.get_claim("sub").and_then(|sub| sub.as_str()) {
         Some(subject) => match user_repo.get_user_by_email(subject).await {
-            Ok(Some(user)) => match vault_repo.get_secret_by_author(created_by, user.id).await {
+            Ok(Some(user)) => match vault_repo
+                .get_secret_by_author(created_by, &user, user_repo)
+                .await
+            {
                 Ok(secrets) if !secrets.is_empty() => {
                     info!(
                         "Successfully retrieved {} vault entries for author: {}",

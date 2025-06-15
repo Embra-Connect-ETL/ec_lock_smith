@@ -75,30 +75,57 @@ impl VaultRepository {
     /*---------------
     GET secret by id
     ---------------*/
-    pub async fn get_secret_by_id(&self, id: &str, user_id: ObjectId) -> Result<Option<String>> {
-        let object_id = ObjectId::parse_str(id).unwrap();
-        let filter = doc! { "_id": object_id, "created_by": user_id };
+    pub async fn get_secret_by_id(
+        &self,
+        id: &str,
+        user: &UserDocument,
+        user_repo: &UserRepository,
+    ) -> anyhow::Result<Option<String>> {
+        QuotaManager::enforce_request_quota(user_repo, user).await?;
+
+        let object_id = ObjectId::parse_str(id).map_err(|_| anyhow!("Invalid ObjectId format"))?;
+
+        let filter = doc! { "_id": object_id, "created_by": user.id };
 
         if let Some(secret) = self.collection.find_one(filter).await? {
-            let encoded_value = BASE64_STANDARD.decode(&secret.value).unwrap();
-            let decrypted_value = decrypt(&encoded_value, &self.encryption_key.as_bytes()).unwrap();
-            return Ok(Some(String::from_utf8_lossy(&decrypted_value).to_string()));
+            let encoded_value = BASE64_STANDARD
+                .decode(&secret.value)
+                .map_err(|_| anyhow!("Failed to decode secret value"))?;
+
+            let decrypted_value = decrypt(&encoded_value, self.encryption_key.as_bytes())
+                .map_err(|_| anyhow!("Failed to decrypt secret value"))?;
+
+            Ok(Some(String::from_utf8_lossy(&decrypted_value).to_string()))
+        } else {
+            Ok(None)
         }
-        Ok(None)
     }
 
     /*-----------------
     GET secret by key
     -------------------*/
-    pub async fn get_secret_by_key(&self, key: &str, user_id: ObjectId) -> Result<Option<String>> {
-        let filter = doc! { "key": key, "created_by": user_id };
+    pub async fn get_secret_by_key(
+        &self,
+        key: &str,
+        user: &UserDocument,
+        user_repo: &UserRepository,
+    ) -> anyhow::Result<Option<String>> {
+        QuotaManager::enforce_request_quota(user_repo, user).await?;
+
+        let filter = doc! { "key": key, "created_by": user.id };
 
         if let Some(secret) = self.collection.find_one(filter).await? {
-            let encoded_value = BASE64_STANDARD.decode(&secret.value).unwrap();
-            let decrypted_value = decrypt(&encoded_value, &self.encryption_key.as_bytes()).unwrap();
-            return Ok(Some(String::from_utf8_lossy(&decrypted_value).to_string()));
+            let encoded_value = BASE64_STANDARD
+                .decode(&secret.value)
+                .map_err(|_| anyhow!("Failed to decode secret value"))?;
+
+            let decrypted_value = decrypt(&encoded_value, self.encryption_key.as_bytes())
+                .map_err(|_| anyhow!("Failed to decrypt secret value"))?;
+
+            Ok(Some(String::from_utf8_lossy(&decrypted_value).to_string()))
+        } else {
+            Ok(None)
         }
-        Ok(None)
     }
 
     /*-----------------
@@ -107,13 +134,16 @@ impl VaultRepository {
     pub async fn get_secret_by_author(
         &self,
         author: &str,
-        user_id: ObjectId,
-    ) -> Result<Vec<VaultMetadataDocument>> {
-        let filter = doc! { "created_by": user_id };
-        let mut cursor = self.collection.find(filter).await?;
-        let mut secrets = Vec::new();
+        user: &UserDocument,
+        user_repo: &UserRepository,
+    ) -> anyhow::Result<Vec<VaultMetadataDocument>> {
+        QuotaManager::enforce_request_quota(user_repo, user).await?;
 
-        while let Some(mut secret) = cursor.try_next().await? {
+        let filter = doc! { "created_by": user.id };
+        let mut cursor = self.collection.find(filter).await?;
+
+        let mut secrets = Vec::new();
+        while let Some(secret) = cursor.try_next().await? {
             secrets.push(VaultMetadataDocument {
                 id: secret.id,
                 key: secret.key,
@@ -164,9 +194,11 @@ impl VaultRepository {
     ---------------*/
     pub async fn list_secrets(
         &self,
-        email: &str,
-        user: UserDocument,
-    ) -> Result<Vec<VaultMetadataDocument>> {
+        user: &UserDocument,
+        user_repo: &UserRepository,
+    ) -> anyhow::Result<Vec<VaultMetadataDocument>> {
+        QuotaManager::enforce_request_quota(user_repo, user).await?;
+
         let mut cursor = self
             .collection
             .find(doc! { "created_by": &user.id })
@@ -177,7 +209,7 @@ impl VaultRepository {
             secrets.push(VaultMetadataDocument {
                 id: secret.id,
                 key: secret.key,
-                created_by: user.clone().email,
+                created_by: user.email.clone(),
                 created_at: secret.created_at,
             });
         }
