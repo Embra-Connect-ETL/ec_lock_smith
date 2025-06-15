@@ -143,50 +143,71 @@ impl Session {
     }
 
     pub async fn create_secret(&mut self, secret: Secret) -> Result<(), String> {
-        let _ = &self.validate_session().await?;
+        let _ = self.validate_session().await?;
 
         let Some(vault_repo) = &self.vault_repo else {
-            return Err("failed to connect to the database".to_owned());
+            return Err("Failed to connect to the database".to_owned());
+        };
+
+        let Some(user_repo) = &self.user_repo else {
+            return Err("Failed to access user repository".to_owned());
         };
 
         let Some(claims) = &self.claims else {
             return Err("Session invalid. Please login.".to_owned());
         };
 
-        let Some(created_by) = claims.get_claim("sub") else {
-            return Err("".to_owned());
+        let Some(email) = claims.get_claim("sub").and_then(|v| v.as_str()) else {
+            return Err("Missing email in session claims".to_owned());
         };
 
-        let _ = vault_repo
-            .create_secret(&secret.key, &secret.value, created_by.to_string().as_str())
+        let user = user_repo
+            .get_user_by_email(email)
             .await
-            .map_err(|error| error.to_string())?;
+            .map_err(|e| format!("Failed to retrieve user: {:?}", e))?
+            .ok_or_else(|| "User not found".to_string())?;
+
+        vault_repo
+            .create_secret(&secret.key, &secret.value, email, user.id)
+            .await
+            .map_err(|e| format!("Failed to create secret: {:?}", e))?;
+
         Ok(())
     }
 
     pub async fn list_secrets(&mut self, id: Option<&str>) -> Result<(), String> {
-        let _ = &self.validate_session().await?;
+        let _ = self.validate_session().await?;
 
         let Some(vault_repo) = &self.vault_repo else {
-            return Err("failed to connect to the database".to_owned());
+            return Err("Failed to connect to the database".to_owned());
+        };
+
+        let Some(user_repo) = &self.user_repo else {
+            return Err("Failed to access user repository".to_owned());
         };
 
         let Some(claims) = &self.claims else {
             return Err("Session invalid. Please login.".to_owned());
         };
 
-        let mut table = Table::new();
-
-        let Some(created_by) = claims.get_claim("sub") else {
-            return Err("".to_owned());
+        let Some(email) = claims.get_claim("sub").and_then(|v| v.as_str()) else {
+            return Err("Missing email in session".to_owned());
         };
+
+        let user = user_repo
+            .get_user_by_email(email)
+            .await
+            .map_err(|e| format!("Failed to retrieve user: {:?}", e))?
+            .ok_or_else(|| "User not found".to_string())?;
+
+        let mut table = Table::new();
 
         if let Some(id) = id {
             table.add_row(Row::new(vec![Cell::new("Id"), Cell::new("Secret")]));
             let Some(secret) = vault_repo
-                .get_secret_by_id(id, created_by.to_string().as_str())
+                .get_secret_by_id(id, user.id)
                 .await
-                .map_err(|error| error.to_string())?
+                .map_err(|e| format!("Failed to retrieve secret: {:?}", e))?
             else {
                 return Err("Invalid secret id".to_owned());
             };
@@ -195,23 +216,29 @@ impl Session {
             table.add_row(Row::new(vec![
                 Cell::new("Id"),
                 Cell::new("Key"),
-                Cell::new("Value"),
+                Cell::new("Created By"),
+                Cell::new("Created At"),
             ]));
+
             let secrets = vault_repo
-                .list_secrets(created_by.to_string().as_str())
+                .list_secrets(email, user)
                 .await
-                .map_err(|error| error.to_string())?;
-            if secrets.len() <= 0 {
-                return Err("No Secrets created yet".to_owned());
+                .map_err(|e| format!("Failed to list secrets: {:?}", e))?;
+
+            if secrets.is_empty() {
+                return Err("No secrets created yet.".to_owned());
             }
-            secrets.iter().for_each(|secret| {
+
+            for secret in secrets {
                 table.add_row(Row::new(vec![
                     Cell::new(secret.id.to_string().as_str()),
                     Cell::new(secret.key.as_str()),
-                    Cell::new(secret.value.as_str()),
+                    Cell::new(secret.created_by.as_str()),
+                    Cell::new(secret.created_at.to_rfc3339().as_str()),
                 ]));
-            });
+            }
         }
+
         table.printstd();
         Ok(())
     }
@@ -223,16 +250,26 @@ impl Session {
             return Err("failed to connect to the database".to_owned());
         };
 
+        let Some(user_repo) = &self.user_repo else {
+            return Err("Failed to access user repository".to_owned());
+        };
+
         let Some(claims) = &self.claims else {
             return Err("Session invalid. Please login.".to_owned());
         };
 
-        let Some(created_by) = claims.get_claim("sub") else {
-            return Err("".to_owned());
+        let Some(email) = claims.get_claim("sub").and_then(|v| v.as_str()) else {
+            return Err("Missing email in session".to_owned());
         };
 
+        let user = user_repo
+            .get_user_by_email(email)
+            .await
+            .map_err(|e| format!("Failed to retrieve user: {:?}", e))?
+            .ok_or_else(|| "User not found".to_string())?;
+
         let _ = vault_repo
-            .delete_secret(id, created_by.to_string().as_str())
+            .delete_secret(id, user)
             .await
             .map_err(|error| error.to_string())?;
         Ok(())
