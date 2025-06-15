@@ -1,0 +1,38 @@
+{
+  "name": "ec_secrets_management",
+  "version": "1.0.0",
+  "description": "Embra Connect's Secrets Management Platform",
+  "scripts": {
+    "install:musl": "sudo apt-get update && sudo apt-get install -y musl-tools && rustup target add x86_64-unknown-linux-musl",
+    "install:openssl": "sudo apt-get update && sudo apt-get install -y pkg-config libssl-dev",
+    "install:deps": "npm run install:musl && npm run install:openssl",
+
+    "clean:rust": "cargo clean --manifest-path=./Cargo.toml",
+    "clean:docker": "sudo docker ps -a | awk '/ec_/ {print $1}' | xargs -r sudo docker rm -f && sudo docker images | awk '/ec_/ {print $3}' | xargs -r sudo docker rmi -f",
+
+    "list:all:containers": "docker ps -a | grep ec_",
+    "list:all:images": "docker images | grep ec_",
+    "clean:all": "npm run clean:rust && npm run clean:docker",
+
+    "build:ec_secrets_management": "cargo build --release --target x86_64-unknown-linux-musl --manifest-path=./api/Cargo.toml",
+    "build:docker:ec_secrets_management": "docker build -f api/Dockerfile -t embraconnect/ec_secrets_management:latest .",
+
+    "run:ec_secrets_management": "docker run --rm --env-file ./api/.env -p 8000:8000 embraconnect/ec_secrets_management:latest",
+
+    "push:docker:ec_secrets_management": "docker push embraconnect/ec_secrets_management:latest"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Embra-Connect-ETL/ec_secrets_management.git"
+  },
+  "keywords": [
+    "api",
+    "secrets management"
+  ],
+  "author": "Irfan Ghat <irfanghat@gmail.com>",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/Embra-Connect-ETL/ec_secrets_management/issues"
+  },
+  "homepage": "https://github.com/Embra-Connect-ETL/ec_secrets_management#readme"
+}

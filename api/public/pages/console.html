@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta property="og:image:width" content="400" />
+    <meta property="og:image:height" content="300" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Locksmith | Secrets Management Platform" />
+    <meta property="og:description" content="Embra Connect's Secrets Management Platform" />
+    <meta property="og:url" content="https://www.embraconnect.com" />
+    <meta property="og:image" content="https://www.embraconnect.com/assets/png/color_logo_no_bg.png" />
+    <link rel="shortcut icon" href="../assets/icons/favicon.ico" type="image/x-icon">
+    <link rel="stylesheet" href="../css/console.css">
+
+    <!-- Vue.js CDN -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+
+    <!-- Toaster -->
+    <link rel="stylesheet" type="text/css" href="https://cdn.jsdelivr.net/npm/toastify-js/src/toastify.min.css" />
+    <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/toastify-js"></script>
+
+    <!-- Icons (Updated to jsDelivr) -->
+    <script type="module" src="https://cdn.jsdelivr.net/npm/ionicons@7.1.0/dist/ionicons/ionicons.esm.js"></script>
+    <script nomodule src="https://cdn.jsdelivr.net/npm/ionicons@7.1.0/dist/ionicons/ionicons.js"></script>
+
+    <title>Locksmith - Console</title>
+</head>
+
+<body>
+    <div class="logout">
+        <button class="logout-btn" title="Logout...">
+            <ion-icon name="log-out"></ion-icon>
+        </button>
+    </div>
+
+    <div class="content-wrapper">
+        <div id="app" class="container">
+            <header>
+                <h2>
+                    <ion-icon name="document-lock" class="header-icon"></ion-icon>
+                    Manage Secrets
+                </h2>
+                <input type="text" class="search-bar" v-model="searchQuery" placeholder="Search secrets...">
+            </header>
+
+            <div class="controls">
+                <button class="btn add" @click="showModal = true">
+                    <ion-icon name="add-circle" class="btn-icon"></ion-icon> Add Secret
+                </button>
+                <button class="btn delete" @click="deleteSelected" :disabled="!selectedSecrets.length">
+                    <ion-icon name="trash" class="btn-icon"></ion-icon> Delete Selected
+                </button>
+            </div>
+
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th><input type="checkbox" @change="toggleAll" v-model="allSelected"></th>
+                            <th>Name (Key)</th>
+                            <th>Status</th>
+                            <th>Created</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr v-for="secret in filteredSecrets" :key="secret.id">
+                            <td><input type="checkbox" v-model="selectedSecrets" :value="secret.id"></td>
+                            <td>{{ secret.key }}</td>
+                            <td :class="['status', (secret.status || 'Active').toLowerCase()]">
+                                <span>
+                                    {{ secret.status || 'Active' }}
+                                </span>
+                            </td>
+                            <td>{{ secret.created }}</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Secret Creation Modal -->
+            <div class="modal" v-if="showModal">
+                <div class="modal-content">
+                    <h3>Add New Secret</h3>
+
+                    <input type="text" v-model="newSecret.name" placeholder="Secret Name (Key)">
+                    <input type="text" v-model="newSecret.value" placeholder="Secret Value">
+                    <input type="text" v-model="newSecret.created_by" placeholder="Secret Author" disabled>
+
+                    <div class="modal-actions">
+                        <button class="btn add" @click="createSecret">Save</button>
+                        <button class="btn delete" @click="showModal = false">Cancel</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function deleteCookie(name) {
+            document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
+        }
+
+        document.querySelector(".logout-btn").addEventListener("click", async () => {
+            try {
+                const response = await fetch(`${API_BASE_URL}/logout`, {
+                    method: "POST",
+                    credentials: "include", // include cookies
+                });
+
+                if (!response.ok) {
+                    throw new Error("Failed to logout");
+                }
+
+                const result = await response.json();
+
+                Toastify({
+                    text: result.message,
+                    duration: 3000,
+                    gravity: "top",
+                    position: "right",
+                    style: {
+                        background: "#ffa07a",
+                        color: "#ffffff",
+                        borderRadius: "24px",
+                        fontWeight: "600",
+                        fontSize: "14px",
+                        letterSpacing: "1.4px",
+                        textTransform: "capitalize",
+                        boxShadow: "0 1rem 1rem 0 rgba(0, 0, 0, .05)",
+                    }
+                }).showToast();
+
+                // Clear any client storage
+                sessionStorage.clear();
+                deleteCookie("ec_id");
+                // Replace current history state to disable going back
+                window.location.replace("./login.html");
+
+            } catch (err) {
+                console.error("Logout error:", err);
+                sessionStorage.clear();
+                window.location.replace("./login.html");
+            }
+        });
+
+        const API_BASE_URL = "http://localhost:8000";
+        const { createApp } = Vue;
+
+        createApp({
+            data() {
+                return {
+                    showModal: false,
+                    searchQuery: "",
+                    secrets: [],
+                    selectedSecrets: [],
+                    allSelected: false,
+                    newSecret: {
+                        name: "",
+                        value: "",
+                        created_by: sessionStorage.getItem("ec_id") || "User info not available",
+                    }
+                };
+            },
+            computed: {
+                filteredSecrets() {
+                    return this.secrets.filter(secret =>
+                        secret.key.toLowerCase().includes(this.searchQuery.toLowerCase())
+                    );
+                }
+            },
+            methods: {
+                displayToaster(message, type = "info") {
+                    const backgroundColor = {
+                        success: "#ffa07a",
+                        error: "#FF5733",
+                        warning: "#ffa07a",
+                        info: "#ffa07a"
+                    }[type] || "#ffa07a";
+
+                    Toastify({
+                        text: message,
+                        duration: 3000,
+                        gravity: "top",
+                        position: "right",
+                        style: {
+                            background: backgroundColor,
+                            color: "#ffffff",
+                            borderRadius: "24px",
+                            fontWeight: "600",
+                            fontSize: "14px",
+                            letterSpacing: "1px",
+                            textTransform: "capitalize",
+                            boxShadow: "0 1rem 1rem 0 rgba(0, 0, 0, .05)",
+                        }
+                    }).showToast();
+                },
+
+                async fetchSecrets() {
+                    try {
+                        const response = await fetch(`${API_BASE_URL}/retrieve/vault/entries`, {
+                            method: 'GET',
+                            credentials: 'include',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            }
+                        });
+
+                        const data = await response.json();
+                        if (!Array.isArray(data)) throw new Error("Invalid API response format");
+
+                        this.secrets = data.map(secret => ({
+                            id: secret._id?.$oid || "n/a",
+                            key: secret.key || "n/a",
+                            value: secret.value || "n/a",
+                            created_by: secret.created_by || "n/a",
+                            created: secret.createdAt?.$date?.$numberLong
+                                ? new Date(parseInt(secret.createdAt.$date.$numberLong)).toLocaleString()
+                                : "Invalid Date",
+                            status: "Active"
+                        }));
+                    } catch (error) {
+                        this.displayToaster("Couldn't retrieve secrets, please try signing in again", "error");
+                    }
+                },
+
+                toggleAll() {
+                    this.selectedSecrets = this.allSelected ? this.filteredSecrets.map(secret => secret.id) : [];
+                },
+
+                async createSecret() {
+                    if (!this.newSecret.name.trim()) {
+                        this.displayToaster("Secret name (key) is required.", "warning");
+                        return;
+                    }
+
+                    const payload = {
+                        key: this.newSecret.name,
+                        value: this.newSecret.value,
+                    };
+
+                    try {
+                        const response = await fetch(`${API_BASE_URL}/create/vault/entry`, {
+                            method: "POST",
+                            credentials: "include",
+                            headers: {
+                                "Content-Type": "application/json"
+                            },
+                            body: JSON.stringify(payload)
+                        });
+
+                        if (!response.ok) throw new Error("Failed to create secret");
+
+                        this.fetchSecrets();
+                        this.newSecret.name = "";
+                        this.newSecret.value = "";
+                        this.showModal = false;
+                        this.displayToaster("Secret created successfully!", "success");
+                    } catch (error) {
+                        this.displayToaster("Couldn't create secret, please try signing in again", "error");
+                    }
+                },
+
+                async deleteSelected() {
+                    if (!this.selectedSecrets.length) {
+                        this.displayToaster("No secrets selected for deletion.", "warning");
+                        return;
+                    }
+
+                    try {
+                        for (const id of this.selectedSecrets) {
+                            const response = await fetch(`${API_BASE_URL}/delete/${id}`, {
+                                method: "DELETE",
+                                credentials: "include",
+                                headers: {
+                                    "Content-Type": "application/json"
+                                }
+                            });
+
+                            if (!response.ok) throw new Error("Failed to delete secret");
+                        }
+
+                        this.fetchSecrets();
+                        this.selectedSecrets = [];
+                        this.displayToaster("Selected secrets deleted successfully.", "success");
+
+                    } catch (error) {
+                        this.displayToaster("Couldn't delete secret, please try signing in again", "error");
+                    }
+                }
+            },
+
+            mounted() {
+                this.fetchSecrets();
+            }
+        }).mount("#app");
+    </script>
+
+</body>
+
+</html>
